@@ -1,0 +1,73 @@
+# Claude Cascade .gitignore
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Log files
+*.log
+logs/
+
+# Test output and coverage
+test-results/
+coverage/
+*.test
+*.out
+
+# Local state and cache
+.claude/plans/*/
+*.cache
+.env.local
+.env.*.local
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Backup files
+*.backup
+*.bak
+
+# Node modules (if any JS tools added later)
+node_modules/
+
+# Python cache (if any Python tools added later)
+__pycache__/
+*.pyc
+*.pyo
+
+# Shell state files
+.bash_history
+.zsh_history
+
+# Documentation build artifacts
+docs/_build/
+*.pdf
+
+# Package files
+*.tar.gz
+*.zip
+*.deb
+*.rpm
+
+# Local configuration overrides
+settings.local.json
+config.local.*
+
+# Test directories created by CLI
+test-project*/
+*-test-*/

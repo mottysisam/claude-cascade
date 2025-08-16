@@ -1,0 +1,757 @@
+#!/bin/bash
+
+# Claude Cascade Doctor
+# Comprehensive system health check and troubleshooting
+
+set -e
+
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CASCADE_ROOT="$(dirname "$SCRIPT_DIR")"
+VERBOSE=0
+FIX_ISSUES=0
+OUTPUT_FORMAT="text"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Health check tracking
+CHECKS_RUN=0
+CHECKS_PASSED=0
+CHECKS_FAILED=0
+WARNINGS_COUNT=0
+ISSUES_FOUND=()
+FIXES_APPLIED=()
+
+# Usage information
+usage() {
+    cat << EOF
+Claude Cascade Doctor - System Health Check
+
+USAGE:
+    claude-cascade-doctor [OPTIONS]
+
+OPTIONS:
+    -v, --verbose       Enable verbose output and detailed diagnostics
+    -f, --fix           Automatically fix issues where possible
+    --format FORMAT     Output format: text, json, markdown (default: text)
+    -h, --help          Show this help message
+
+HEALTH CHECKS:
+    Installation        - Verify installation integrity
+    Dependencies        - Check required dependencies
+    Permissions         - Validate file permissions
+    Configuration       - Check configuration files
+    Templates           - Validate template integrity
+    Git Integration     - Test Git functionality
+    Claude Code Hooks   - Verify hook integration
+    Performance         - Check system performance
+    Security            - Security configuration review
+
+EXAMPLES:
+    claude-cascade-doctor                    # Run all health checks
+    claude-cascade-doctor --verbose          # Detailed diagnostics
+    claude-cascade-doctor --fix              # Fix issues automatically
+    claude-cascade-doctor --format markdown  # Markdown report output
+
+EOF
+}
+
+# Logging functions
+log() {
+    if [[ $OUTPUT_FORMAT == "text" ]]; then
+        echo -e "${BLUE}[INFO]${NC} $1"
+    fi
+}
+
+log_success() {
+    if [[ $OUTPUT_FORMAT == "text" ]]; then
+        echo -e "${GREEN}[PASS]${NC} $1"
+    fi
+}
+
+log_error() {
+    if [[ $OUTPUT_FORMAT == "text" ]]; then
+        echo -e "${RED}[FAIL]${NC} $1" >&2
+    fi
+}
+
+log_warning() {
+    if [[ $OUTPUT_FORMAT == "text" ]]; then
+        echo -e "${YELLOW}[WARN]${NC} $1"
+    fi
+    WARNINGS_COUNT=$((WARNINGS_COUNT + 1))
+}
+
+log_verbose() {
+    if [[ $VERBOSE -eq 1 && $OUTPUT_FORMAT == "text" ]]; then
+        echo -e "${CYAN}[VERBOSE]${NC} $1"
+    fi
+}
+
+log_fix() {
+    if [[ $OUTPUT_FORMAT == "text" ]]; then
+        echo -e "${GREEN}[FIXED]${NC} $1"
+    fi
+}
+
+# Health check result tracking
+add_check() {
+    local status="$1"
+    local message="$2"
+    
+    CHECKS_RUN=$((CHECKS_RUN + 1))
+    
+    case $status in
+        "pass")
+            log_success "$message"
+            CHECKS_PASSED=$((CHECKS_PASSED + 1))
+            ;;
+        "fail")
+            log_error "$message"
+            CHECKS_FAILED=$((CHECKS_FAILED + 1))
+            ISSUES_FOUND+=("$message")
+            ;;
+        "warn")
+            log_warning "$message"
+            ;;
+    esac
+}
+
+# Fix functions
+fix_permissions() {
+    local file="$1"
+    local expected_perm="$2"
+    
+    if [[ $FIX_ISSUES -eq 1 ]]; then
+        chmod "$expected_perm" "$file"
+        log_fix "Fixed permissions for $file"
+        FIXES_APPLIED+=("Fixed permissions for $file")
+        return 0
+    fi
+    return 1
+}
+
+fix_missing_directory() {
+    local dir="$1"
+    
+    if [[ $FIX_ISSUES -eq 1 ]]; then
+        mkdir -p "$dir"
+        log_fix "Created missing directory: $dir"
+        FIXES_APPLIED+=("Created missing directory: $dir")
+        return 0
+    fi
+    return 1
+}
+
+# Health check functions
+
+check_installation() {
+    log_verbose "Checking installation integrity..."
+    
+    # Check core files exist
+    local core_files=(
+        "bin/claude-cascade"
+        "bin/claude-cascade-test"
+        "bin/claude-cascade-validate"
+        "bin/claude-cascade-doctor"
+        "templates/frontend.md"
+        "templates/backend.md"
+        "templates/devops.md"
+        "hooks/claude-code-hook.js"
+        "scripts/analytics.sh"
+        "install.sh"
+        "install.ps1"
+        "README.md"
+        "LICENSE"
+    )
+    
+    local missing_files=()
+    for file in "${core_files[@]}"; do
+        if [[ ! -f "$CASCADE_ROOT/$file" ]]; then
+            missing_files+=("$file")
+        fi
+    done
+    
+    if [[ ${#missing_files[@]} -eq 0 ]]; then
+        add_check "pass" "All core files present"
+    else
+        add_check "fail" "Missing core files: ${missing_files[*]}"
+    fi
+    
+    # Check directory structure
+    local core_dirs=(
+        "bin"
+        "templates"
+        "hooks"
+        "scripts"
+        "docs"
+        "examples"
+    )
+    
+    local missing_dirs=()
+    for dir in "${core_dirs[@]}"; do
+        if [[ ! -d "$CASCADE_ROOT/$dir" ]]; then
+            missing_dirs+=("$dir")
+        fi
+    done
+    
+    if [[ ${#missing_dirs[@]} -eq 0 ]]; then
+        add_check "pass" "All core directories present"
+    else
+        for dir in "${missing_dirs[@]}"; do
+            if fix_missing_directory "$CASCADE_ROOT/$dir"; then
+                add_check "pass" "Core directory created: $dir"
+            else
+                add_check "fail" "Missing core directory: $dir"
+            fi
+        done
+    fi
+}
+
+check_dependencies() {
+    log_verbose "Checking system dependencies..."
+    
+    # Required commands
+    local required_commands=(
+        "git:Git version control"
+        "bash:Bash shell"
+    )
+    
+    # Optional but recommended commands
+    local optional_commands=(
+        "markdownlint:Markdown linting"
+        "yq:YAML processing"
+        "jq:JSON processing"
+        "curl:HTTP client"
+    )
+    
+    # Check required commands
+    for cmd_info in "${required_commands[@]}"; do
+        local cmd="${cmd_info%%:*}"
+        local desc="${cmd_info##*:}"
+        
+        if command -v "$cmd" >/dev/null 2>&1; then
+            local version=$(${cmd} --version 2>/dev/null | head -1 || echo "unknown")
+            add_check "pass" "$desc available: $version"
+        else
+            add_check "fail" "$desc not found ($cmd command missing)"
+        fi
+    done
+    
+    # Check optional commands
+    for cmd_info in "${optional_commands[@]}"; do
+        local cmd="${cmd_info%%:*}"
+        local desc="${cmd_info##*:}"
+        
+        if command -v "$cmd" >/dev/null 2>&1; then
+            local version=$(${cmd} --version 2>/dev/null | head -1 || echo "unknown")
+            add_check "pass" "$desc available: $version"
+        else
+            add_check "warn" "$desc not found ($cmd) - optional but recommended"
+        fi
+    done
+    
+    # Check shell version
+    if [[ -n "$BASH_VERSION" ]]; then
+        local bash_version_major=$(echo "$BASH_VERSION" | cut -d. -f1)
+        if [[ $bash_version_major -ge 4 ]]; then
+            add_check "pass" "Bash version compatible: $BASH_VERSION"
+        else
+            add_check "fail" "Bash version too old: $BASH_VERSION (need 4.0+)"
+        fi
+    fi
+    
+    # Check Git version
+    if command -v git >/dev/null 2>&1; then
+        local git_version=$(git --version | grep -o '[0-9]\+\.[0-9]\+' | head -1)
+        local git_major=$(echo "$git_version" | cut -d. -f1)
+        local git_minor=$(echo "$git_version" | cut -d. -f2)
+        
+        if [[ $git_major -gt 2 ]] || [[ $git_major -eq 2 && $git_minor -ge 20 ]]; then
+            add_check "pass" "Git version compatible: $git_version"
+        else
+            add_check "warn" "Git version older than recommended: $git_version (recommend 2.20+)"
+        fi
+    fi
+}
+
+check_permissions() {
+    log_verbose "Checking file permissions..."
+    
+    # Executable files that should be executable
+    local executable_files=(
+        "bin/claude-cascade"
+        "bin/claude-cascade-test"
+        "bin/claude-cascade-validate"
+        "bin/claude-cascade-doctor"
+        "install.sh"
+        "scripts/analytics.sh"
+    )
+    
+    for file in "${executable_files[@]}"; do
+        local full_path="$CASCADE_ROOT/$file"
+        if [[ -f "$full_path" ]]; then
+            if [[ -x "$full_path" ]]; then
+                add_check "pass" "Executable permissions correct: $file"
+            else
+                if fix_permissions "$full_path" "+x"; then
+                    add_check "pass" "Fixed executable permissions: $file"
+                else
+                    add_check "fail" "Missing executable permissions: $file"
+                fi
+            fi
+        fi
+    done
+    
+    # Check if we can write to the installation directory
+    if [[ -w "$CASCADE_ROOT" ]]; then
+        add_check "pass" "Installation directory writable"
+    else
+        add_check "warn" "Installation directory not writable (may limit some features)"
+    fi
+    
+    # Check if global installation exists
+    if command -v claude-cascade >/dev/null 2>&1; then
+        local global_path=$(which claude-cascade)
+        add_check "pass" "Global installation found: $global_path"
+    else
+        add_check "warn" "Global installation not found (may need to add to PATH)"
+    fi
+}
+
+check_configuration() {
+    log_verbose "Checking configuration..."
+    
+    # Check if we're in a Git repository
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        add_check "pass" "Running in Git repository"
+        
+        # Check Git configuration
+        local git_user=$(git config user.name 2>/dev/null || echo "")
+        local git_email=$(git config user.email 2>/dev/null || echo "")
+        
+        if [[ -n "$git_user" && -n "$git_email" ]]; then
+            add_check "pass" "Git user configured: $git_user <$git_email>"
+        else
+            add_check "warn" "Git user not configured (may affect commit creation)"
+        fi
+    else
+        add_check "warn" "Not in a Git repository (some features may be limited)"
+    fi
+    
+    # Check Claude Code integration
+    if [[ -f ".claude/claude-code-hook.js" ]]; then
+        add_check "pass" "Claude Code hook found in current project"
+    else
+        add_check "warn" "No Claude Code hook in current project"
+    fi
+    
+    # Check for existing planning directory
+    if [[ -d ".claude/plans" ]]; then
+        add_check "pass" "Planning directory exists"
+        
+        # Check subdirectories
+        local plan_dirs=("1_pre_exec_plans" "2_post_exec_plans" "3_verification")
+        for dir in "${plan_dirs[@]}"; do
+            if [[ -d ".claude/plans/$dir" ]]; then
+                local count=$(find ".claude/plans/$dir" -name "*.md" | wc -l)
+                add_check "pass" "Found $count plans in $dir"
+            fi
+        done
+    else
+        add_check "warn" "No planning directory (run 'claude-cascade init' to create)"
+    fi
+}
+
+check_templates() {
+    log_verbose "Checking template integrity..."
+    
+    # Use the validate command to check templates
+    if "$CASCADE_ROOT/bin/claude-cascade-validate" --quiet "$CASCADE_ROOT/templates" >/dev/null 2>&1; then
+        add_check "pass" "All templates valid"
+    else
+        add_check "fail" "Template validation failed (run claude-cascade-validate for details)"
+    fi
+    
+    # Check for custom templates
+    if [[ -d "templates" ]]; then
+        local custom_count=$(find templates -name "*.md" | wc -l)
+        add_check "pass" "Found $custom_count custom templates"
+    else
+        add_check "warn" "No custom templates directory"
+    fi
+}
+
+check_git_integration() {
+    log_verbose "Checking Git integration..."
+    
+    if ! command -v git >/dev/null 2>&1; then
+        add_check "fail" "Git not available for integration"
+        return
+    fi
+    
+    # Test git commands that claude-cascade uses
+    local test_commands=(
+        "git status --porcelain"
+        "git branch --show-current"
+        "git config --get user.name"
+        "git config --get user.email"
+    )
+    
+    local git_errors=0
+    for cmd in "${test_commands[@]}"; do
+        if ! $cmd >/dev/null 2>&1; then
+            git_errors=$((git_errors + 1))
+            log_verbose "Git command failed: $cmd"
+        fi
+    done
+    
+    if [[ $git_errors -eq 0 ]]; then
+        add_check "pass" "Git integration functional"
+    else
+        add_check "fail" "Git integration issues ($git_errors commands failed)"
+    fi
+    
+    # Check if we can create commits
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        local test_file=".claude-cascade-test-$$"
+        if echo "test" > "$test_file" && git add "$test_file" 2>/dev/null; then
+            if git commit -m "Test commit" >/dev/null 2>&1; then
+                git reset --soft HEAD~1 >/dev/null 2>&1
+                add_check "pass" "Can create Git commits"
+            else
+                add_check "warn" "Cannot create Git commits (check user configuration)"
+            fi
+            git reset HEAD "$test_file" >/dev/null 2>&1
+            rm -f "$test_file"
+        else
+            add_check "warn" "Cannot stage files for Git commits"
+        fi
+    fi
+}
+
+check_claude_code_hooks() {
+    log_verbose "Checking Claude Code hook integration..."
+    
+    local hook_file="$CASCADE_ROOT/hooks/claude-code-hook.js"
+    if [[ -f "$hook_file" ]]; then
+        # Check if Node.js is available for hook validation
+        if command -v node >/dev/null 2>&1; then
+            if node -c "$hook_file" 2>/dev/null; then
+                add_check "pass" "Claude Code hook syntax valid"
+            else
+                add_check "fail" "Claude Code hook has syntax errors"
+            fi
+        else
+            add_check "warn" "Node.js not available to validate hook syntax"
+        fi
+        
+        # Check hook content
+        if grep -q "claude-cascade" "$hook_file"; then
+            add_check "pass" "Hook references claude-cascade"
+        else
+            add_check "warn" "Hook may not be properly configured"
+        fi
+    else
+        add_check "fail" "Claude Code hook file missing"
+    fi
+    
+    # Check for hook installation in current project
+    if [[ -f ".claude/claude-code-hook.js" ]]; then
+        add_check "pass" "Hook installed in current project"
+    else
+        add_check "warn" "Hook not installed in current project"
+    fi
+}
+
+check_performance() {
+    log_verbose "Checking system performance..."
+    
+    # Test template processing speed
+    local start_time=$(date +%s%N)
+    "$CASCADE_ROOT/bin/claude-cascade" --help >/dev/null 2>&1
+    local end_time=$(date +%s%N)
+    local duration=$(( (end_time - start_time) / 1000000 )) # Convert to milliseconds
+    
+    if [[ $duration -lt 1000 ]]; then
+        add_check "pass" "CLI startup time good ($duration ms)"
+    elif [[ $duration -lt 3000 ]]; then
+        add_check "warn" "CLI startup time slow ($duration ms)"
+    else
+        add_check "fail" "CLI startup time very slow ($duration ms)"
+    fi
+    
+    # Check disk space
+    local available_space=$(df "$CASCADE_ROOT" | awk 'NR==2 {print $4}' 2>/dev/null || echo "0")
+    if [[ $available_space -gt 1000000 ]]; then # 1GB in KB
+        add_check "pass" "Sufficient disk space available"
+    elif [[ $available_space -gt 100000 ]]; then # 100MB in KB
+        add_check "warn" "Low disk space (consider cleanup)"
+    else
+        add_check "fail" "Very low disk space (may cause issues)"
+    fi
+    
+    # Check memory usage (approximate)
+    if command -v ps >/dev/null 2>&1; then
+        local memory_usage=$(ps -o pid,rss -p $$ | awk 'NR==2 {print $2}' 2>/dev/null || echo "0")
+        if [[ $memory_usage -lt 100000 ]]; then # 100MB in KB
+            add_check "pass" "Memory usage normal ($memory_usage KB)"
+        else
+            add_check "warn" "High memory usage ($memory_usage KB)"
+        fi
+    fi
+}
+
+check_security() {
+    log_verbose "Checking security configuration..."
+    
+    # Check file permissions for sensitive files
+    local sensitive_files=(
+        "hooks/claude-code-hook.js"
+        "bin/claude-cascade"
+    )
+    
+    for file in "${sensitive_files[@]}"; do
+        local full_path="$CASCADE_ROOT/$file"
+        if [[ -f "$full_path" ]]; then
+            local perms=$(stat -c "%a" "$full_path" 2>/dev/null || stat -f "%A" "$full_path" 2>/dev/null || echo "unknown")
+            if [[ "$perms" =~ ^[67][0-7][0-7]$ ]]; then
+                add_check "pass" "Secure permissions for $file ($perms)"
+            else
+                add_check "warn" "Potentially insecure permissions for $file ($perms)"
+            fi
+        fi
+    done
+    
+    # Check for world-writable files
+    local world_writable_count=0
+    if command -v find >/dev/null 2>&1; then
+        world_writable_count=$(find "$CASCADE_ROOT" -type f -perm -002 2>/dev/null | wc -l)
+    fi
+    
+    if [[ $world_writable_count -eq 0 ]]; then
+        add_check "pass" "No world-writable files found"
+    else
+        add_check "warn" "$world_writable_count world-writable files found"
+    fi
+    
+    # Check for executable scripts with proper shebangs
+    local script_files=$(find "$CASCADE_ROOT" -type f -executable -name "*.sh" 2>/dev/null || true)
+    for script in $script_files; do
+        if head -1 "$script" | grep -q "^#!/"; then
+            add_check "pass" "Script has proper shebang: $(basename "$script")"
+        else
+            add_check "warn" "Script missing shebang: $(basename "$script")"
+        fi
+    done
+}
+
+# Output functions
+output_text_report() {
+    local exit_code="$1"
+    
+    echo
+    echo "=================================="
+    echo "Claude Cascade Health Check Report"
+    echo "=================================="
+    echo "Date: $(date)"
+    echo "System: $(uname -s) $(uname -r)"
+    echo "Installation: $CASCADE_ROOT"
+    echo
+    echo "Health Check Summary:"
+    echo "  Total Checks: $CHECKS_RUN"
+    echo "  Passed: $CHECKS_PASSED"
+    echo "  Failed: $CHECKS_FAILED"
+    echo "  Warnings: $WARNINGS_COUNT"
+    echo
+    
+    if [[ ${#FIXES_APPLIED[@]} -gt 0 ]]; then
+        echo "Fixes Applied:"
+        for fix in "${FIXES_APPLIED[@]}"; do
+            echo "  ✓ $fix"
+        done
+        echo
+    fi
+    
+    if [[ ${#ISSUES_FOUND[@]} -gt 0 ]]; then
+        echo "Issues Found:"
+        for issue in "${ISSUES_FOUND[@]}"; do
+            echo "  ✗ $issue"
+        done
+        echo
+    fi
+    
+    if [[ $exit_code -eq 0 ]]; then
+        echo -e "${GREEN}Overall Health: GOOD${NC}"
+        echo "Claude Cascade appears to be working correctly."
+    elif [[ $CHECKS_FAILED -eq 0 && $WARNINGS_COUNT -gt 0 ]]; then
+        echo -e "${YELLOW}Overall Health: GOOD (with warnings)${NC}"
+        echo "Claude Cascade is working but some optimizations are recommended."
+    else
+        echo -e "${RED}Overall Health: ISSUES DETECTED${NC}"
+        echo "Claude Cascade has issues that should be addressed."
+        
+        if [[ $FIX_ISSUES -eq 0 ]]; then
+            echo "Run with --fix to automatically fix some issues."
+        fi
+    fi
+}
+
+output_json_report() {
+    local exit_code="$1"
+    
+    cat << EOF
+{
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "system_info": {
+    "os": "$(uname -s)",
+    "version": "$(uname -r)",
+    "installation_path": "$CASCADE_ROOT"
+  },
+  "health_summary": {
+    "total_checks": $CHECKS_RUN,
+    "passed": $CHECKS_PASSED,
+    "failed": $CHECKS_FAILED,
+    "warnings": $WARNINGS_COUNT,
+    "overall_status": "$([ $exit_code -eq 0 ] && echo "healthy" || echo "issues")"
+  },
+  "issues_found": [
+$(printf '    "%s"' "${ISSUES_FOUND[@]}" | paste -sd,)
+  ],
+  "fixes_applied": [
+$(printf '    "%s"' "${FIXES_APPLIED[@]}" | paste -sd,)
+  ]
+}
+EOF
+}
+
+output_markdown_report() {
+    local exit_code="$1"
+    
+    cat << EOF
+# Claude Cascade Health Check Report
+
+**Date:** $(date)  
+**System:** $(uname -s) $(uname -r)  
+**Installation:** $CASCADE_ROOT  
+
+## Health Check Summary
+
+| Metric | Count |
+|--------|-------|
+| Total Checks | $CHECKS_RUN |
+| Passed | $CHECKS_PASSED |
+| Failed | $CHECKS_FAILED |
+| Warnings | $WARNINGS_COUNT |
+
+## Overall Status
+
+$(if [[ $exit_code -eq 0 ]]; then
+    echo "✅ **HEALTHY** - Claude Cascade appears to be working correctly."
+elif [[ $CHECKS_FAILED -eq 0 && $WARNINGS_COUNT -gt 0 ]]; then
+    echo "⚠️ **GOOD (with warnings)** - Claude Cascade is working but some optimizations are recommended."
+else
+    echo "❌ **ISSUES DETECTED** - Claude Cascade has issues that should be addressed."
+fi)
+
+EOF
+
+    if [[ ${#FIXES_APPLIED[@]} -gt 0 ]]; then
+        echo "## Fixes Applied"
+        echo
+        for fix in "${FIXES_APPLIED[@]}"; do
+            echo "- ✅ $fix"
+        done
+        echo
+    fi
+    
+    if [[ ${#ISSUES_FOUND[@]} -gt 0 ]]; then
+        echo "## Issues Found"
+        echo
+        for issue in "${ISSUES_FOUND[@]}"; do
+            echo "- ❌ $issue"
+        done
+        echo
+    fi
+}
+
+# Main function
+main() {
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -v|--verbose)
+                VERBOSE=1
+                shift
+                ;;
+            -f|--fix)
+                FIX_ISSUES=1
+                shift
+                ;;
+            --format)
+                OUTPUT_FORMAT="$2"
+                shift 2
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                usage
+                exit 1
+                ;;
+        esac
+    done
+    
+    if [[ $OUTPUT_FORMAT == "text" ]]; then
+        log "Starting Claude Cascade health check..."
+        if [[ $FIX_ISSUES -eq 1 ]]; then
+            log "Auto-fix mode enabled"
+        fi
+        echo
+    fi
+    
+    # Run all health checks
+    check_installation
+    check_dependencies
+    check_permissions
+    check_configuration
+    check_templates
+    check_git_integration
+    check_claude_code_hooks
+    check_performance
+    check_security
+    
+    # Determine exit code
+    local exit_code=0
+    if [[ $CHECKS_FAILED -gt 0 ]]; then
+        exit_code=1
+    fi
+    
+    # Output report
+    case $OUTPUT_FORMAT in
+        "json")
+            output_json_report $exit_code
+            ;;
+        "markdown")
+            output_markdown_report $exit_code
+            ;;
+        "text"|*)
+            output_text_report $exit_code
+            ;;
+    esac
+    
+    exit $exit_code
+}
+
+# Check if script is being sourced or executed
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi

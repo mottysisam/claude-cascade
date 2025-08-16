@@ -1,0 +1,500 @@
+#!/bin/bash
+
+# Claude Cascade - Three-Phase Planning System
+# Main CLI tool for systematic project planning and execution
+
+set -e
+
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CASCADE_ROOT="$(dirname "$SCRIPT_DIR")"
+VERSION="1.0.0"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Logging functions
+log() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+# Usage information
+usage() {
+    cat << EOF
+Claude Cascade - Three-Phase Planning System v$VERSION
+
+USAGE:
+    claude-cascade <command> [options] [arguments]
+
+COMMANDS:
+    init [PROJECT_TYPE]     Initialize three-phase planning in current project
+    plan <DESCRIPTION>      Create Phase 1 pre-execution plan
+    complete               Document Phase 2 post-execution reality
+    verify                 Perform Phase 3 delta verification
+    analytics              Generate planning analytics and insights
+    
+    hooks <action>         Manage global enforcement hooks
+    validate <target>      Validate templates and examples
+    test [pattern]         Run comprehensive test suite
+    doctor                 System health check and diagnostics
+    
+    version                Show version information
+    help                   Show this help message
+
+HOOK ACTIONS:
+    hooks install          Install global three-phase enforcement hooks
+    hooks verify           Check hook installation and status
+    hooks update           Update hooks to latest version
+    hooks enable           Enable hook enforcement
+    hooks disable          Disable hook enforcement
+    hooks status           Show current hook status
+
+PROJECT TYPES:
+    frontend               Frontend/UI development projects
+    backend                Backend/API development projects
+    devops                 Infrastructure and deployment projects
+    mobile                 Mobile application projects
+    fullstack              Full-stack application projects
+
+EXAMPLES:
+    claude-cascade init frontend         # Initialize for frontend project
+    claude-cascade plan "user auth"      # Create plan for user authentication
+    claude-cascade complete              # Document what was actually done
+    claude-cascade verify                # Verify objectives were achieved
+    claude-cascade hooks install         # Install global enforcement hooks
+    claude-cascade analytics             # View planning performance metrics
+
+WORKFLOW:
+    1. Initialize: claude-cascade init [type]
+    2. Plan:       claude-cascade plan "feature description"
+    3. Execute:    [Implement your feature]
+    4. Document:   claude-cascade complete
+    5. Verify:     claude-cascade verify
+
+For detailed help on any command, use: claude-cascade <command> --help
+
+EOF
+}
+
+# Initialize project with three-phase planning
+cmd_init() {
+    local project_type="${1:-general}"
+    
+    log "Initializing Claude Cascade three-phase planning..."
+    
+    # Create directory structure
+    mkdir -p .claude/plans/{1_pre_exec_plans,2_post_exec_plans,3_checked_delta_exec_plans}
+    
+    # Copy appropriate template
+    local template_file="$CASCADE_ROOT/templates/${project_type}.md"
+    if [[ -f "$template_file" ]]; then
+        cp "$template_file" ".claude/plans/template.md"
+        log_success "Template copied: $project_type"
+    else
+        log_warning "Template not found for $project_type, using general template"
+        cp "$CASCADE_ROOT/templates/frontend.md" ".claude/plans/template.md"
+    fi
+    
+    # Create initial documentation
+    cat > ".claude/plans/README.md" << EOF
+# Three-Phase Planning System
+
+This project uses Claude Cascade systematic planning methodology.
+
+## Workflow
+
+1. **Phase 1 - Pre-Execution**: Plan before you code
+2. **Phase 2 - Post-Execution**: Document what actually happened  
+3. **Phase 3 - Delta Verification**: Verify objectives were achieved
+
+## Directory Structure
+
+- \`1_pre_exec_plans/\` - Pre-execution planning documents
+- \`2_post_exec_plans/\` - Post-execution documentation
+- \`3_checked_delta_exec_plans/\` - Verification reports
+
+## Usage
+
+- \`claude-cascade plan "description"\` - Create Phase 1 plan
+- \`claude-cascade complete\` - Create Phase 2 documentation
+- \`claude-cascade verify\` - Create Phase 3 verification
+
+EOF
+    
+    log_success "Three-phase planning initialized for $project_type project"
+    log "Next step: claude-cascade plan \"your feature description\""
+}
+
+# Create Phase 1 plan
+cmd_plan() {
+    local description="$1"
+    
+    if [[ -z "$description" ]]; then
+        log_error "Plan description required"
+        echo "Usage: claude-cascade plan \"description of what you want to implement\""
+        exit 1
+    fi
+    
+    # Ensure planning directory exists
+    mkdir -p .claude/plans/1_pre_exec_plans
+    
+    # Generate plan filename
+    local timestamp=$(date '+%Y%m%d_%H%M%S')
+    local safe_description=$(echo "$description" | tr '[:lower:]' '[:upper:]' | sed 's/[^A-Z0-9]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
+    local plan_file=".claude/plans/1_pre_exec_plans/${timestamp}_${safe_description}.md"
+    
+    # Create plan from template
+    local template_file=".claude/plans/template.md"
+    if [[ -f "$template_file" ]]; then
+        cp "$template_file" "$plan_file"
+    else
+        log_warning "No template found, creating basic plan structure"
+        cat > "$plan_file" << EOF
+# Pre-Execution Plan: $description
+**Date:** $(date '+%Y-%m-%d %H:%M:%S')
+**Estimated Duration:** [FILL IN]
+**Priority:** [High/Medium/Low]
+
+## Objective
+$description
+
+## Detailed Steps
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+## Success Criteria
+- [ ] [Criterion 1]
+- [ ] [Criterion 2]
+- [ ] [Criterion 3]
+
+## Resources Required
+- [Resource 1]
+- [Resource 2]
+
+## Risks & Mitigation
+- **Risk:** [Description]
+  - **Mitigation:** [Strategy]
+
+## Expected Outcomes
+- [Outcome 1]
+- [Outcome 2]
+
+## Verification Tests Planned
+- [ ] [Test 1]
+- [ ] [Test 2]
+
+## Definition of Done
+- [ ] All success criteria met
+- [ ] All verification tests passed
+- [ ] Documentation updated
+- [ ] Code reviewed and merged
+
+EOF
+    fi
+    
+    log_success "Phase 1 plan created: $plan_file"
+    log "Next step: Implement your plan, then run 'claude-cascade complete'"
+}
+
+# Create Phase 2 documentation
+cmd_complete() {
+    log "Creating Phase 2 post-execution documentation..."
+    
+    # Find most recent Phase 1 plan
+    local latest_plan=$(find .claude/plans/1_pre_exec_plans -name "*.md" -type f -not -name "TEMPLATE*" | sort | tail -1)
+    
+    if [[ -z "$latest_plan" ]]; then
+        log_error "No Phase 1 plan found. Create one first with: claude-cascade plan \"description\""
+        exit 1
+    fi
+    
+    local plan_basename=$(basename "$latest_plan" .md)
+    local timestamp=$(date '+%Y%m%d_%H%M%S')
+    local exec_file=".claude/plans/2_post_exec_plans/${timestamp}_${plan_basename}_EXECUTED.md"
+    
+    mkdir -p .claude/plans/2_post_exec_plans
+    
+    cat > "$exec_file" << EOF
+# Post-Execution Report: [PROJECT DESCRIPTION]
+**Date:** $(date '+%Y-%m-%d %H:%M:%S')
+**Actual Duration:** [FILL IN]
+**Status:** [Completed/Partially Completed/Failed]
+**Original Plan:** [${latest_plan}](${latest_plan})
+
+## What Was Actually Executed
+[Describe what was actually implemented]
+
+## Deviations from Plan
+[Describe any changes from the original plan]
+
+## Issues Encountered
+[Document any problems or obstacles]
+
+## Results Achieved
+[Describe the actual outcomes]
+
+## Lessons Learned
+[What would you do differently next time?]
+
+## Next Steps
+[Any follow-up work required]
+
+EOF
+    
+    log_success "Phase 2 execution report created: $exec_file"
+    log "Please edit the file to document what actually happened"
+    log "Next step: claude-cascade verify"
+}
+
+# Create Phase 3 verification
+cmd_verify() {
+    log "Creating Phase 3 delta verification..."
+    
+    # Find most recent Phase 2 execution report
+    local latest_exec=$(find .claude/plans/2_post_exec_plans -name "*_EXECUTED.md" -type f | sort | tail -1)
+    
+    if [[ -z "$latest_exec" ]]; then
+        log_error "No Phase 2 execution report found. Create one first with: claude-cascade complete"
+        exit 1
+    fi
+    
+    local exec_basename=$(basename "$latest_exec" .md)
+    local timestamp=$(date '+%Y%m%d_%H%M%S')
+    local verify_file=".claude/plans/3_checked_delta_exec_plans/${timestamp}_${exec_basename}_VERIFICATION.md"
+    
+    mkdir -p .claude/plans/3_checked_delta_exec_plans
+    
+    cat > "$verify_file" << EOF
+# Delta Verification Report: [PROJECT DESCRIPTION]
+**Date:** $(date '+%Y-%m-%d %H:%M:%S')
+**Verification Duration:** [FILL IN]
+**Status:** [VERIFIED SUCCESS/ISSUES FOUND]
+**Execution Report:** [${latest_exec}](${latest_exec})
+
+## Objective Achievement Verification
+**Original Objective:** [State original objective]
+**Achievement Status:** [✅ ACHIEVED / ❌ NOT ACHIEVED / ⚠️ PARTIALLY ACHIEVED]
+
+## Success Criteria Verification
+- [ ] [Criterion 1] - ✅/❌ [Result]
+- [ ] [Criterion 2] - ✅/❌ [Result]
+- [ ] [Criterion 3] - ✅/❌ [Result]
+
+## Quality Verification
+- [ ] Code quality meets standards
+- [ ] Documentation is complete
+- [ ] Tests pass successfully
+- [ ] Performance meets requirements
+
+## Delta Analysis: Planned vs. Achieved
+| Aspect | Planned | Achieved | Delta | Status |
+|--------|---------|----------|--------|--------|
+| [Aspect 1] | [Planned value] | [Actual value] | [Difference] | ✅/❌ |
+| [Aspect 2] | [Planned value] | [Actual value] | [Difference] | ✅/❌ |
+
+## Issues Found & Resolution
+[Document any issues discovered during verification]
+
+## Final Verification Statement
+**Overall Assessment:** [SUCCESS/FAILURE/PARTIAL SUCCESS]
+**Verification Confidence:** [0-100%]
+**Ready for Production:** [YES/NO]
+
+EOF
+    
+    log_success "Phase 3 verification report created: $verify_file"
+    log "Please edit the file to verify objectives were achieved"
+    log "Three-phase workflow complete!"
+}
+
+# Hook management commands
+cmd_hooks() {
+    local action="${1:-status}"
+    
+    case $action in
+        install)
+            log "Installing global three-phase enforcement hooks..."
+            "$SCRIPT_DIR/install-global-hooks.sh"
+            ;;
+        verify|status)
+            log "Checking hook installation status..."
+            
+            local hooks_dir="$HOME/.claude/hooks"
+            local settings_file="$HOME/.claude/settings.json"
+            
+            if [[ -d "$hooks_dir" ]]; then
+                log_success "✓ Global hooks directory exists: $hooks_dir"
+                
+                local hook_scripts=("plan-monitor.sh" "phase-validator.sh" "plan-tracker.sh")
+                for script in "${hook_scripts[@]}"; do
+                    if [[ -x "$hooks_dir/$script" ]]; then
+                        log_success "✓ $script installed and executable"
+                    else
+                        log_error "✗ $script missing or not executable"
+                    fi
+                done
+            else
+                log_error "✗ Global hooks directory not found"
+                log "Run 'claude-cascade hooks install' to install hooks"
+            fi
+            
+            if [[ -f "$settings_file" ]] && grep -q "hooks" "$settings_file"; then
+                log_success "✓ Settings file contains hook configuration"
+            else
+                log_warning "⚠ Settings file may not have hooks configured"
+            fi
+            ;;
+        update)
+            log "Updating hooks to latest version..."
+            "$SCRIPT_DIR/install-global-hooks.sh"
+            log_success "Hooks updated successfully"
+            ;;
+        enable)
+            log_warning "Hook enable/disable functionality not yet implemented"
+            log "Hooks are controlled via ~/.claude/settings.json"
+            ;;
+        disable)
+            log_warning "Hook enable/disable functionality not yet implemented"
+            log "Hooks are controlled via ~/.claude/settings.json"
+            ;;
+        *)
+            log_error "Unknown hook action: $action"
+            echo "Available actions: install, verify, update, enable, disable, status"
+            exit 1
+            ;;
+    esac
+}
+
+# Analytics and reporting
+cmd_analytics() {
+    log "Generating planning analytics..."
+    
+    local plans_dir=".claude/plans"
+    if [[ ! -d "$plans_dir" ]]; then
+        log_error "No planning directory found. Initialize first with: claude-cascade init"
+        exit 1
+    fi
+    
+    # Count plans by phase
+    local phase1_count=$(find "$plans_dir/1_pre_exec_plans" -name "*.md" -type f -not -name "TEMPLATE*" 2>/dev/null | wc -l | tr -d ' ')
+    local phase2_count=$(find "$plans_dir/2_post_exec_plans" -name "*.md" -type f -not -name "TEMPLATE*" 2>/dev/null | wc -l | tr -d ' ')
+    local phase3_count=$(find "$plans_dir/3_checked_delta_exec_plans" -name "*.md" -type f -not -name "TEMPLATE*" 2>/dev/null | wc -l | tr -d ' ')
+    
+    # Calculate completion rate
+    local completion_rate=0
+    if [[ $phase1_count -gt 0 ]]; then
+        completion_rate=$(( (phase3_count * 100) / phase1_count ))
+    fi
+    
+    echo
+    echo "================================"
+    echo "Claude Cascade Planning Analytics"
+    echo "================================"
+    echo "Project: $(basename "$(pwd)")"
+    echo "Date: $(date)"
+    echo
+    echo "Planning Statistics:"
+    echo "  Phase 1 Plans:     $phase1_count"
+    echo "  Phase 2 Executions: $phase2_count"
+    echo "  Phase 3 Verifications: $phase3_count"
+    echo "  Completion Rate:    $completion_rate%"
+    echo
+    
+    if [[ $phase1_count -eq 0 ]]; then
+        echo "💡 Get started by creating your first plan:"
+        echo "   claude-cascade plan \"your feature description\""
+    elif [[ $phase2_count -lt $phase1_count ]]; then
+        echo "📝 You have unfinished plans. Document execution with:"
+        echo "   claude-cascade complete"
+    elif [[ $phase3_count -lt $phase2_count ]]; then
+        echo "✅ You have unverified executions. Complete verification with:"
+        echo "   claude-cascade verify"
+    else
+        echo "🎉 Excellent! All plans have complete three-phase documentation."
+    fi
+    echo
+}
+
+# Show version
+cmd_version() {
+    echo "Claude Cascade v$VERSION"
+    echo "Three-Phase Planning System"
+    echo "https://github.com/anthropic/claude-cascade"
+}
+
+# Main command dispatcher
+main() {
+    local command="${1:-help}"
+    
+    case $command in
+        init)
+            shift
+            cmd_init "$@"
+            ;;
+        plan)
+            shift
+            if [[ $# -eq 0 ]]; then
+                log_error "Plan description required"
+                echo "Usage: claude-cascade plan \"description\""
+                exit 1
+            fi
+            cmd_plan "$*"
+            ;;
+        complete)
+            cmd_complete
+            ;;
+        verify)
+            cmd_verify
+            ;;
+        hooks)
+            shift
+            cmd_hooks "$@"
+            ;;
+        validate)
+            shift
+            "$SCRIPT_DIR/claude-cascade-validate" "$@"
+            ;;
+        test)
+            shift
+            "$SCRIPT_DIR/claude-cascade-test" "$@"
+            ;;
+        doctor)
+            "$SCRIPT_DIR/claude-cascade-doctor"
+            ;;
+        analytics)
+            cmd_analytics
+            ;;
+        version|--version|-v)
+            cmd_version
+            ;;
+        help|--help|-h|"")
+            usage
+            ;;
+        *)
+            log_error "Unknown command: $command"
+            echo "Run 'claude-cascade help' for usage information"
+            exit 1
+            ;;
+    esac
+}
+
+# Execute main function with all arguments
+main "$@"

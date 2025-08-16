@@ -1,0 +1,502 @@
+#!/bin/bash
+
+# Claude Cascade Testing Framework
+# Comprehensive testing for templates, workflows, and integrations
+
+set -e
+
+# Configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CASCADE_ROOT="$(dirname "$SCRIPT_DIR")"
+TEST_DIR="$CASCADE_ROOT/tests"
+TEMP_DIR="/tmp/claude-cascade-test-$$"
+VERBOSE=0
+TEST_PATTERN=""
+QUIET=0
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Usage information
+usage() {
+    cat << EOF
+Claude Cascade Testing Framework
+
+USAGE:
+    claude-cascade-test [OPTIONS] [TEST_PATTERN]
+
+OPTIONS:
+    -v, --verbose       Enable verbose output
+    -q, --quiet         Suppress non-essential output
+    -h, --help          Show this help message
+    --unit              Run only unit tests
+    --integration       Run only integration tests
+    --templates         Test template validation
+    --examples          Test example workflows
+    --performance       Run performance tests
+    --all               Run all test suites (default)
+
+EXAMPLES:
+    claude-cascade-test                    # Run all tests
+    claude-cascade-test --templates        # Test only templates
+    claude-cascade-test --verbose          # Run with detailed output
+    claude-cascade-test simple-feature     # Test specific pattern
+
+TEST SUITES:
+    Unit Tests          - Core functionality validation
+    Integration Tests   - End-to-end workflow testing
+    Template Tests      - Template validation and examples
+    Example Tests       - Example workflow verification
+    Performance Tests   - Speed and efficiency validation
+    Security Tests      - Security and validation checks
+
+EOF
+}
+
+# Logging functions
+log() {
+    if [[ $QUIET -eq 0 ]]; then
+        echo -e "${BLUE}[INFO]${NC} $1"
+    fi
+}
+
+log_success() {
+    echo -e "${GREEN}[PASS]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[FAIL]${NC} $1" >&2
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_verbose() {
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo -e "${BLUE}[VERBOSE]${NC} $1"
+    fi
+}
+
+# Test result tracking
+TESTS_RUN=0
+TESTS_PASSED=0
+TESTS_FAILED=0
+FAILED_TESTS=()
+
+# Run a test function and track results
+run_test() {
+    local test_name="$1"
+    local test_function="$2"
+    
+    log_verbose "Running test: $test_name"
+    TESTS_RUN=$((TESTS_RUN + 1))
+    
+    if $test_function; then
+        log_success "$test_name"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        return 0
+    else
+        log_error "$test_name"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        FAILED_TESTS+=("$test_name")
+        return 1
+    fi
+}
+
+# Setup test environment
+setup_test_env() {
+    log_verbose "Setting up test environment in $TEMP_DIR"
+    mkdir -p "$TEMP_DIR"
+    cd "$TEMP_DIR"
+    
+    # Create test project structure
+    mkdir -p test-project/{docs,src,tests}
+    
+    # Set up git repository for testing
+    git init test-project >/dev/null 2>&1
+    cd test-project
+    git config user.email "test@example.com" >/dev/null 2>&1
+    git config user.name "Test User" >/dev/null 2>&1
+    
+    # Create initial commit
+    echo "# Test Project" > README.md
+    git add README.md >/dev/null 2>&1
+    git commit -m "Initial commit" >/dev/null 2>&1
+    
+    cd "$TEMP_DIR"
+}
+
+# Cleanup test environment
+cleanup_test_env() {
+    log_verbose "Cleaning up test environment"
+    rm -rf "$TEMP_DIR"
+}
+
+# Test Functions
+
+# Unit Tests
+test_cli_help() {
+    "$CASCADE_ROOT/bin/claude-cascade" --help >/dev/null 2>&1
+}
+
+test_cli_version() {
+    "$CASCADE_ROOT/bin/claude-cascade" --version >/dev/null 2>&1
+}
+
+test_template_validation() {
+    local template_file="$CASCADE_ROOT/templates/frontend.md"
+    [[ -f "$template_file" ]] && grep -q "# Pre-Execution Plan" "$template_file"
+}
+
+test_hook_validation() {
+    local hook_file="$CASCADE_ROOT/hooks/claude-code-hook.js"
+    [[ -f "$hook_file" ]] && node -c "$hook_file" >/dev/null 2>&1
+}
+
+test_analytics_script() {
+    local analytics_script="$CASCADE_ROOT/scripts/analytics.sh"
+    [[ -f "$analytics_script" ]] && bash -n "$analytics_script"
+}
+
+# Integration Tests
+test_project_initialization() {
+    cd "$TEMP_DIR/test-project"
+    "$CASCADE_ROOT/bin/claude-cascade" init frontend-project >/dev/null 2>&1
+    [[ -d ".claude/plans" ]] && [[ -f ".claude/plans/template.md" ]]
+}
+
+test_plan_creation() {
+    cd "$TEMP_DIR/test-project"
+    echo "test plan creation" | "$CASCADE_ROOT/bin/claude-cascade" plan "test feature" >/dev/null 2>&1
+    [[ -f ".claude/plans/1_pre_exec_plans/$(date +%Y%m%d)_"*"_TEST_FEATURE.md" ]]
+}
+
+test_plan_completion() {
+    cd "$TEMP_DIR/test-project"
+    # Create a plan first
+    echo "test plan completion" | "$CASCADE_ROOT/bin/claude-cascade" plan "test feature" >/dev/null 2>&1
+    
+    # Complete the plan
+    echo "test execution completed" | "$CASCADE_ROOT/bin/claude-cascade" complete >/dev/null 2>&1
+    [[ -d ".claude/plans/2_post_exec_plans" ]]
+}
+
+test_verification_process() {
+    cd "$TEMP_DIR/test-project"
+    # Create and complete a plan
+    echo "test verification" | "$CASCADE_ROOT/bin/claude-cascade" plan "test feature" >/dev/null 2>&1
+    echo "test execution" | "$CASCADE_ROOT/bin/claude-cascade" complete >/dev/null 2>&1
+    
+    # Run verification
+    echo "verification completed" | "$CASCADE_ROOT/bin/claude-cascade" verify >/dev/null 2>&1
+    [[ -d ".claude/plans/3_verification" ]]
+}
+
+test_analytics_generation() {
+    cd "$TEMP_DIR/test-project"
+    "$CASCADE_ROOT/bin/claude-cascade" analytics >/dev/null 2>&1
+}
+
+# Template Tests
+test_frontend_template() {
+    local template="$CASCADE_ROOT/templates/frontend.md"
+    [[ -f "$template" ]] && 
+    grep -q "## Success Criteria" "$template" &&
+    grep -q "## Verification Tests Planned" "$template"
+}
+
+test_backend_template() {
+    local template="$CASCADE_ROOT/templates/backend.md"
+    [[ -f "$template" ]] && 
+    grep -q "## API Design" "$template" &&
+    grep -q "## Database Schema" "$template"
+}
+
+test_devops_template() {
+    local template="$CASCADE_ROOT/templates/devops.md"
+    [[ -f "$template" ]] && 
+    grep -q "## Infrastructure" "$template" &&
+    grep -q "## Monitoring" "$template"
+}
+
+test_template_structure() {
+    local templates_dir="$CASCADE_ROOT/templates"
+    local required_sections=("# Pre-Execution Plan" "## Objective" "## Success Criteria" "## Verification Tests Planned")
+    
+    for template in "$templates_dir"/*.md; do
+        [[ -f "$template" ]] || continue
+        for section in "${required_sections[@]}"; do
+            grep -q "$section" "$template" || return 1
+        done
+    done
+}
+
+# Example Tests
+test_simple_feature_example() {
+    local example_dir="$CASCADE_ROOT/examples/simple-feature"
+    [[ -d "$example_dir" ]] &&
+    [[ -f "$example_dir/phase1_plan.md" ]] &&
+    [[ -f "$example_dir/phase2_execution.md" ]] &&
+    [[ -f "$example_dir/phase3_verification.md" ]]
+}
+
+test_complex_refactor_example() {
+    local example_dir="$CASCADE_ROOT/examples/complex-refactor"
+    [[ -d "$example_dir" ]] &&
+    [[ -f "$example_dir/phase1_plan.md" ]] &&
+    [[ -f "$example_dir/performance/optimization-results.md" ]]
+}
+
+test_cicd_setup_example() {
+    local example_dir="$CASCADE_ROOT/examples/ci-cd-setup"
+    [[ -d "$example_dir" ]] &&
+    [[ -f "$example_dir/phase1_plan.md" ]] &&
+    grep -q "Infrastructure as Code" "$example_dir/phase1_plan.md"
+}
+
+test_example_structure() {
+    local examples_dir="$CASCADE_ROOT/examples"
+    for example in "$examples_dir"/*/; do
+        [[ -d "$example" ]] || continue
+        [[ -f "$example/README.md" ]] || return 1
+        [[ -f "$example/phase1_plan.md" ]] || return 1
+    done
+}
+
+# Performance Tests
+test_template_processing_speed() {
+    local start_time=$(date +%s%N)
+    "$CASCADE_ROOT/bin/claude-cascade" validate "$CASCADE_ROOT/templates/frontend.md" >/dev/null 2>&1
+    local end_time=$(date +%s%N)
+    local duration=$(( (end_time - start_time) / 1000000 )) # Convert to milliseconds
+    
+    # Template processing should be under 100ms
+    [[ $duration -lt 100 ]]
+}
+
+test_analytics_generation_speed() {
+    cd "$TEMP_DIR/test-project"
+    local start_time=$(date +%s%N)
+    "$CASCADE_ROOT/bin/claude-cascade" analytics >/dev/null 2>&1
+    local end_time=$(date +%s%N)
+    local duration=$(( (end_time - start_time) / 1000000 ))
+    
+    # Analytics generation should be under 2 seconds
+    [[ $duration -lt 2000 ]]
+}
+
+test_git_integration_speed() {
+    cd "$TEMP_DIR/test-project"
+    local start_time=$(date +%s%N)
+    echo "speed test" | "$CASCADE_ROOT/bin/claude-cascade" plan "speed test" >/dev/null 2>&1
+    local end_time=$(date +%s%N)
+    local duration=$(( (end_time - start_time) / 1000000 ))
+    
+    # Git integration should be under 500ms
+    [[ $duration -lt 500 ]]
+}
+
+# Security Tests
+test_input_validation() {
+    cd "$TEMP_DIR/test-project"
+    # Test with potentially malicious input
+    echo "; rm -rf /" | "$CASCADE_ROOT/bin/claude-cascade" plan "security test" >/dev/null 2>&1
+    # Should not have executed the rm command (we're still here!)
+    [[ -d "$TEMP_DIR" ]]
+}
+
+test_file_permissions() {
+    # Check that executable files have correct permissions
+    [[ -x "$CASCADE_ROOT/bin/claude-cascade" ]] &&
+    [[ -x "$CASCADE_ROOT/install.sh" ]]
+}
+
+test_template_safety() {
+    # Check that templates don't contain executable code
+    ! grep -r "eval\|exec\|system\|rm -rf" "$CASCADE_ROOT/templates/" >/dev/null 2>&1
+}
+
+# Test Suite Runners
+run_unit_tests() {
+    log "Running unit tests..."
+    
+    run_test "CLI Help Command" test_cli_help
+    run_test "CLI Version Command" test_cli_version
+    run_test "Template Validation" test_template_validation
+    run_test "Hook Validation" test_hook_validation
+    run_test "Analytics Script" test_analytics_script
+}
+
+run_integration_tests() {
+    log "Running integration tests..."
+    
+    run_test "Project Initialization" test_project_initialization
+    run_test "Plan Creation" test_plan_creation
+    run_test "Plan Completion" test_plan_completion
+    run_test "Verification Process" test_verification_process
+    run_test "Analytics Generation" test_analytics_generation
+}
+
+run_template_tests() {
+    log "Running template tests..."
+    
+    run_test "Frontend Template" test_frontend_template
+    run_test "Backend Template" test_backend_template
+    run_test "DevOps Template" test_devops_template
+    run_test "Template Structure" test_template_structure
+}
+
+run_example_tests() {
+    log "Running example tests..."
+    
+    run_test "Simple Feature Example" test_simple_feature_example
+    run_test "Complex Refactor Example" test_complex_refactor_example
+    run_test "CI/CD Setup Example" test_cicd_setup_example
+    run_test "Example Structure" test_example_structure
+}
+
+run_performance_tests() {
+    log "Running performance tests..."
+    
+    run_test "Template Processing Speed" test_template_processing_speed
+    run_test "Analytics Generation Speed" test_analytics_generation_speed
+    run_test "Git Integration Speed" test_git_integration_speed
+}
+
+run_security_tests() {
+    log "Running security tests..."
+    
+    run_test "Input Validation" test_input_validation
+    run_test "File Permissions" test_file_permissions
+    run_test "Template Safety" test_template_safety
+}
+
+# Main test runner
+main() {
+    local run_unit=0
+    local run_integration=0
+    local run_templates=0
+    local run_examples=0
+    local run_performance=0
+    local run_security=1
+    local run_all=1
+    
+    # Parse command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -v|--verbose)
+                VERBOSE=1
+                shift
+                ;;
+            -q|--quiet)
+                QUIET=1
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            --unit)
+                run_unit=1
+                run_all=0
+                shift
+                ;;
+            --integration)
+                run_integration=1
+                run_all=0
+                shift
+                ;;
+            --templates)
+                run_templates=1
+                run_all=0
+                shift
+                ;;
+            --examples)
+                run_examples=1
+                run_all=0
+                shift
+                ;;
+            --performance)
+                run_performance=1
+                run_all=0
+                shift
+                ;;
+            --security)
+                run_security=1
+                run_all=0
+                shift
+                ;;
+            --all)
+                run_all=1
+                shift
+                ;;
+            *)
+                TEST_PATTERN="$1"
+                shift
+                ;;
+        esac
+    done
+    
+    # Set all test types if running all tests
+    if [[ $run_all -eq 1 ]]; then
+        run_unit=1
+        run_integration=1
+        run_templates=1
+        run_examples=1
+        run_performance=1
+        run_security=1
+    fi
+    
+    log "Starting Claude Cascade test suite..."
+    
+    # Setup test environment
+    setup_test_env
+    
+    # Run specified test suites
+    [[ $run_unit -eq 1 ]] && run_unit_tests
+    [[ $run_integration -eq 1 ]] && run_integration_tests
+    [[ $run_templates -eq 1 ]] && run_template_tests
+    [[ $run_examples -eq 1 ]] && run_example_tests
+    [[ $run_performance -eq 1 ]] && run_performance_tests
+    [[ $run_security -eq 1 ]] && run_security_tests
+    
+    # Cleanup
+    cleanup_test_env
+    
+    # Report results
+    echo
+    echo "=================================="
+    echo "Test Results Summary"
+    echo "=================================="
+    echo "Tests Run:    $TESTS_RUN"
+    echo "Tests Passed: $TESTS_PASSED"
+    echo "Tests Failed: $TESTS_FAILED"
+    
+    if [[ $TESTS_FAILED -gt 0 ]]; then
+        echo
+        echo "Failed Tests:"
+        for test in "${FAILED_TESTS[@]}"; do
+            echo "  - $test"
+        done
+        echo
+        log_error "Some tests failed. See output above for details."
+        exit 1
+    else
+        echo
+        log_success "All tests passed!"
+        exit 0
+    fi
+}
+
+# Handle script interruption
+trap cleanup_test_env EXIT
+
+# Check if script is being sourced or executed
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
