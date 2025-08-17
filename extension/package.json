@@ -1,0 +1,128 @@
+{
+  "name": "claude-cascade",
+  "displayName": "Claude Cascade",
+  "description": "Revolutionary Three-Phase Planning System for systematic software development",
+  "version": "1.0.3",
+  "publisher": "anthropic",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "planning",
+    "workflow",
+    "claude",
+    "project-management",
+    "development"
+  ],
+  "activationEvents": [
+    "workspaceContains:.claude/plans"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeCascade.createPlan",
+        "title": "Create Plan",
+        "category": "Claude Cascade",
+        "icon": "$(notebook-edit)"
+      },
+      {
+        "command": "claudeCascade.completeExecution",
+        "title": "Complete Execution",
+        "category": "Claude Cascade",
+        "icon": "$(check)"
+      },
+      {
+        "command": "claudeCascade.verify",
+        "title": "Verify",
+        "category": "Claude Cascade",
+        "icon": "$(verified)"
+      },
+      {
+        "command": "claudeCascade.showDashboard",
+        "title": "Show Dashboard",
+        "category": "Claude Cascade",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "claudeCascade.refreshPlans",
+        "title": "Refresh Plans",
+        "category": "Claude Cascade",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "claudeCascade.openPlan",
+        "title": "Open Plan",
+        "category": "Claude Cascade"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "claudeCascadePlans",
+          "name": "Claude Cascade",
+          "when": "claudeCascade.enabled"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "claudeCascade.createPlan",
+          "when": "view == claudeCascadePlans",
+          "group": "navigation"
+        },
+        {
+          "command": "claudeCascade.showDashboard",
+          "when": "view == claudeCascadePlans",
+          "group": "navigation"
+        },
+        {
+          "command": "claudeCascade.refreshPlans",
+          "when": "view == claudeCascadePlans",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "claudeCascade.openPlan",
+          "when": "view == claudeCascadePlans && viewItem == plan"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Claude Cascade",
+      "properties": {
+        "claudeCascade.autoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically refresh plans when files change"
+        },
+        "claudeCascade.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show compliance status in status bar"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./ && npm run copy-assets",
+    "copy-assets": "mkdir -p out/webview/styles out/webview/design-system && cp src/webview/styles/*.css out/webview/styles/ 2>/dev/null || true && cp src/webview/design-system/*.css out/webview/design-system/ 2>/dev/null || true",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "install-extension": "code --install-extension claude-cascade-1.0.3.vsix"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "18.x",
+    "typescript": "^4.9.4",
+    "@vscode/vsce": "^2.15.0"
+  },
+  "dependencies": {}
+}

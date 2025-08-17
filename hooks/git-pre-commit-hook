@@ -1,0 +1,203 @@
+#!/bin/bash
+# Git pre-commit hook to enforce three-phase planning compliance
+# Install by copying to .git/hooks/pre-commit
+
+set -euo pipefail
+
+# Constants
+SCRIPT_DIR="$(dirname "$(realpath "$0")")"
+GIT_ROOT=$(git rev-parse --show-toplevel)
+PLANS_DIR="$GIT_ROOT/.claude/plans"
+PHASE1_DIR="$PLANS_DIR/1_pre_exec_plans"
+PHASE2_DIR="$PLANS_DIR/2_post_exec_plans" 
+PHASE3_DIR="$PLANS_DIR/3_checked_delta_exec_plans"
+VALIDATOR_SCRIPT="$SCRIPT_DIR/pre-action-validator.sh"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+RESET='\033[0m'
+
+# Configuration 
+BLOCK_COMMIT_ON_INCOMPLETE=true  # Block commit if phases incomplete
+CHECK_STAGED_FILES=true          # Validate if staged files match plans
+SKIP_HOOK_ENV="SKIP_CLAUDE_HOOKS" # Env var to skip hook
+
+# Check if hook should be skipped
+if [[ -n "${!SKIP_HOOK_ENV:-}" ]]; then
+    echo -e "${YELLOW}Warning:${RESET} Skipping Claude Cascade pre-commit hook due to $SKIP_HOOK_ENV env var"
+    exit 0
+fi
+
+# Helper to display banner messages
+display_banner() {
+    local message="$1"
+    local color="${2:-$YELLOW}"
+    local length=${#message}
+    local line=$(printf "%${length}s" | tr ' ' '=')
+    
+    echo -e "${color}"
+    echo "$line"
+    echo "$message"
+    echo "$line"
+    echo -e "${RESET}"
+}
+
+# Check if validator script exists
+validate_script() {
+    if [[ ! -x "$VALIDATOR_SCRIPT" ]]; then
+        echo -e "${RED}Error:${RESET} Validator script not found or not executable: $VALIDATOR_SCRIPT"
+        echo -e "Please run: chmod +x $VALIDATOR_SCRIPT"
+        
+        # Fallback to basic checks
+        echo -e "${YELLOW}Falling back to basic validation...${RESET}"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Check for incomplete phases
+check_incomplete_phases() {
+    if ! validate_script; then
+        # Fallback to basic check
+        if [[ ! -d "$PLANS_DIR" ]]; then
+            echo -e "${YELLOW}Warning:${RESET} Plans directory not found: $PLANS_DIR"
+            return 0
+        fi
+        
+        # Check if any Phase 1 plans are missing corresponding Phase 2 or 3
+        local incomplete=false
+        for phase1_plan in "$PHASE1_DIR"/*.md; do
+            if [[ ! -f "$phase1_plan" ]] || [[ "$(basename "$phase1_plan")" == "TEMPLATE_"* ]]; then
+                continue
+            fi
+            
+            # Extract plan ID (date + name)
+            local basename=$(basename "$phase1_plan")
+            local plan_id=$(echo "$basename" | sed -E 's/^([0-9]{8}_[0-9]{6}_[A-Z_]+).*/\1/')
+            
+            # Check for matching Phase 2
+            local phase2_found=false
+            for phase2_plan in "$PHASE2_DIR"/*"$plan_id"*_EXECUTED.md; do
+                if [[ -f "$phase2_plan" ]]; then
+                    phase2_found=true
+                    break
+                fi
+            done
+            
+            if [[ "$phase2_found" == false ]]; then
+                echo -e "${RED}Missing Phase 2${RESET} for plan: ${YELLOW}$basename${RESET}"
+                incomplete=true
+                continue
+            fi
+            
+            # Check for matching Phase 3
+            local phase3_found=false
+            for phase3_plan in "$PHASE3_DIR"/*"$plan_id"*_VERIFICATION.md; do
+                if [[ -f "$phase3_plan" ]]; then
+                    phase3_found=true
+                    break
+                fi
+            done
+            
+            if [[ "$phase3_found" == false ]]; then
+                echo -e "${RED}Missing Phase 3${RESET} for plan: ${YELLOW}$basename${RESET}"
+                incomplete=true
+            fi
+        done
+        
+        if [[ "$incomplete" == true ]]; then
+            return 1
+        fi
+        
+        return 0
+    else
+        # Use the validator script
+        "$VALIDATOR_SCRIPT" validate_phases >/dev/null
+        return $?
+    fi
+}
+
+# Check staged files against plans
+check_staged_files() {
+    if [[ "$CHECK_STAGED_FILES" != true ]]; then
+        return 0
+    fi
+    
+    # Get list of staged files being committed
+    local staged_files
+    staged_files=$(git diff --cached --name-only)
+    
+    if [[ -z "$staged_files" ]]; then
+        # No staged files
+        return 0
+    fi
+    
+    # Check if any Phase 1 plan mentions these files
+    local found_plan=false
+    for phase1_plan in "$PHASE1_DIR"/*.md; do
+        if [[ ! -f "$phase1_plan" ]] || [[ "$(basename "$phase1_plan")" == "TEMPLATE_"* ]]; then
+            continue
+        fi
+        
+        local plan_content
+        plan_content=$(cat "$phase1_plan")
+        
+        for file in $staged_files; do
+            if echo "$plan_content" | grep -q "$file"; then
+                found_plan=true
+                break 2
+            fi
+        done
+    done
+    
+    if [[ "$found_plan" == false ]]; then
+        echo -e "${YELLOW}Warning:${RESET} Staged files not mentioned in any Phase 1 plan:"
+        echo "$staged_files"
+        
+        # Only warn, don't block
+        return 0
+    fi
+    
+    return 0
+}
+
+# Main function
+main() {
+    echo -e "${BLUE}Running Claude Cascade pre-commit hook...${RESET}"
+    
+    # Check for incomplete phases
+    if ! check_incomplete_phases; then
+        display_banner "THREE-PHASE COMPLIANCE VALIDATION FAILED" "$RED"
+        echo -e "${RED}Error:${RESET} Found incomplete phases in the planning workflow"
+        echo -e "${YELLOW}According to the three-phase planning methodology:${RESET}"
+        echo -e "  1. Every Phase 1 plan must have a corresponding Phase 2 execution report"
+        echo -e "  2. Every Phase 2 report must have a corresponding Phase 3 verification"
+        echo ""
+        echo -e "${CYAN}Suggested actions:${RESET}"
+        echo -e "  1. Complete missing Phase 2 or Phase 3 documentation"
+        echo -e "  2. Use 'SKIP_CLAUDE_HOOKS=1 git commit' to bypass this check (not recommended)"
+        
+        if [[ "$BLOCK_COMMIT_ON_INCOMPLETE" == true ]]; then
+            echo -e "\n${RED}Commit blocked.${RESET} Please complete all phases before committing."
+            exit 1
+        else
+            echo -e "\n${YELLOW}Warning:${RESET} Commit allowed despite incomplete phases."
+        fi
+    else
+        echo -e "${GREEN}✅ Three-phase compliance check passed${RESET}"
+    fi
+    
+    # Check staged files
+    check_staged_files
+    
+    echo -e "${GREEN}✅ Pre-commit hook passed${RESET}"
+    exit 0
+}
+
+# Run the main function
+main "$@"

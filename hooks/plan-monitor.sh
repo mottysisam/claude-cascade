@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Ensure required environment variables
+CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
 # Constants
 HOOKS_DIR="$(dirname "$0")"
 STATE_DIR="$HOOKS_DIR/state"
@@ -55,7 +58,7 @@ check_planning_keywords() {
         check_phase1_exists "${found_keywords[@]}"
     else
         # No planning keywords found, allow without reminder
-        echo '{"decision": "allow"}'
+        echo '{"decision": "approve"}'
     fi
 }
 
@@ -75,7 +78,7 @@ check_phase1_exists() {
         log_activity "PROMPT_CHECK: Planning keywords detected ($keyword_list) but no Phase 1 plan found"
         
         echo '{
-            "decision": "allow",
+            "decision": "approve",
             "message": "📋 Planning keywords detected. Consider creating a Phase 1 plan in .claude/plans/1_pre_exec_plans/ before starting implementation.",
             "metadata": {
                 "detected_keywords": ["'$(IFS='","'; echo "${keywords[*]}")'"],
@@ -86,7 +89,7 @@ check_phase1_exists() {
     else
         # Phase 1 plan exists, allow silently
         log_activity "PROMPT_CHECK: Planning keywords detected with existing Phase 1 plan"
-        echo '{"decision": "allow"}'
+        echo '{"decision": "approve"}'
     fi
 }
 
@@ -101,7 +104,7 @@ check_before_write() {
     
     # Skip checks for template files, logs, and documentation
     if [[ "$file_path" =~ \.(md|log|txt)$ ]] || [[ "$file_path" =~ /\.claude/ ]] || [[ "$file_path" =~ TEMPLATE ]]; then
-        echo '{"decision": "allow"}'
+        echo '{"decision": "approve"}'
         return
     fi
     
@@ -113,7 +116,7 @@ check_before_write() {
         log_activity "PRE_WRITE_CHECK: Major file operation without Phase 1 plan (file: $file_path)"
         
         echo '{
-            "decision": "allow",
+            "decision": "approve",
             "message": "⚠️  Major file changes detected. Consider documenting this work with a Phase 1 plan.",
             "metadata": {
                 "file_path": "'$file_path'",
@@ -123,7 +126,7 @@ check_before_write() {
         }'
     else
         log_activity "PRE_WRITE_CHECK: File operation with existing Phase 1 plan (file: $file_path)"
-        echo '{"decision": "allow"}'
+        echo '{"decision": "approve"}'
     fi
 }
 
@@ -139,7 +142,7 @@ check_before_bash() {
     # Skip checks for read-only commands and system queries
     if [[ "$command" =~ ^(ls|cat|head|tail|grep|find|which|echo|date|pwd|whoami) ]] || 
        [[ "$command" =~ ^(git status|git log|git diff) ]]; then
-        echo '{"decision": "allow"}'
+        echo '{"decision": "approve"}'
         return
     fi
     
@@ -152,7 +155,7 @@ check_before_bash() {
             log_activity "PRE_BASH_CHECK: Significant command without Phase 1 plan (command: $command)"
             
             echo '{
-                "decision": "allow",
+                "decision": "approve",
                 "message": "🔧 Significant command detected. Consider creating a Phase 1 plan to document this work.",
                 "metadata": {
                     "command": "'$command'",
@@ -162,10 +165,10 @@ check_before_bash() {
             }'
         else
             log_activity "PRE_BASH_CHECK: Significant command with existing Phase 1 plan (command: $command)"
-            echo '{"decision": "allow"}'
+            echo '{"decision": "approve"}'
         fi
     else
-        echo '{"decision": "allow"}'
+        echo '{"decision": "approve"}'
     fi
 }
 
@@ -184,7 +187,7 @@ main() {
             check_before_bash
             ;;
         *)
-            echo '{"decision": "allow", "message": "Plan monitor: Unknown command '$1'"}'
+            echo '{"decision": "approve", "message": "Plan monitor: Unknown command '$1'"}'
             ;;
     esac
 }

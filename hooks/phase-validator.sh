@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Ensure required environment variables
+CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
 # Constants
 HOOKS_DIR="$(dirname "$0")"
 STATE_DIR="$HOOKS_DIR/state"
@@ -59,7 +62,7 @@ check_post_execution() {
             log_activity "POST_EXECUTION: Significant operation completed, Phase 2 documentation needed (tool: $tool_name)"
             
             echo '{
-                "decision": "allow",
+                "decision": "approve",
                 "message": "📝 Execution detected. Consider creating Phase 2 documentation to record what was actually done.",
                 "metadata": {
                     "tool_used": "'$tool_name'",
@@ -86,7 +89,7 @@ check_post_execution() {
             log_activity "POST_EXECUTION: Verification command detected, Phase 3 needed (command: $command)"
             
             echo '{
-                "decision": "allow",
+                "decision": "approve",
                 "message": "🧪 Verification activities detected. Consider creating Phase 3 documentation to validate completion.",
                 "metadata": {
                     "verification_command": "'$command'",
@@ -100,7 +103,7 @@ check_post_execution() {
     fi
     
     # Default: allow without message
-    echo '{"decision": "allow"}'
+    echo '{"decision": "approve"}'
 }
 
 # Validate phase completeness
@@ -201,7 +204,7 @@ main() {
             get_phase_suggestions
             ;;
         *)
-            echo '{"decision": "allow", "message": "Phase validator: Unknown command '$1'"}'
+            echo '{"decision": "approve", "message": "Phase validator: Unknown command '$1'"}'
             ;;
     esac
 }

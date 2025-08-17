@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+# Ensure required environment variables
+CLAUDE_PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+
 # Constants
 HOOKS_DIR="$(dirname "$0")"
 STATE_DIR="$HOOKS_DIR/state"
@@ -68,27 +71,32 @@ analyze_plan_completeness() {
     local complete_workflows=()
     
     # Check each Phase 1 plan for completion
-    for phase1_file in "${phase1_files[@]}"; do
-        local base_name
-        base_name=$(basename "$phase1_file" .md)
-        
-        # Look for corresponding Phase 2 and 3 files
-        local phase2_exists=false
-        local phase3_exists=false
-        
-        for phase2_file in "${phase2_files[@]}"; do
-            if [[ "$(basename "$phase2_file")" =~ ${base_name}_EXECUTED\.md$ ]]; then
-                phase2_exists=true
-                break
+    if [[ ${#phase1_files[@]} -gt 0 ]]; then
+        for phase1_file in "${phase1_files[@]}"; do
+            local base_name
+            base_name=$(basename "$phase1_file" .md)
+            
+            # Look for corresponding Phase 2 and 3 files
+            local phase2_exists=false
+            local phase3_exists=false
+            
+            if [[ ${#phase2_files[@]} -gt 0 ]]; then
+                for phase2_file in "${phase2_files[@]}"; do
+                    if [[ "$(basename "$phase2_file")" =~ ${base_name}_EXECUTED\.md$ ]]; then
+                        phase2_exists=true
+                        break
+                    fi
+                done
             fi
-        done
-        
-        for phase3_file in "${phase3_files[@]}"; do
-            if [[ "$(basename "$phase3_file")" =~ ${base_name}_VERIFICATION\.md$ ]]; then
-                phase3_exists=true
-                break
+            
+            if [[ ${#phase3_files[@]} -gt 0 ]]; then
+                for phase3_file in "${phase3_files[@]}"; do
+                    if [[ "$(basename "$phase3_file")" =~ ${base_name}_VERIFICATION\.md$ ]]; then
+                        phase3_exists=true
+                        break
+                    fi
+                done
             fi
-        done
         
         local status="incomplete"
         local missing_phases=()
@@ -107,7 +115,8 @@ analyze_plan_completeness() {
         else
             incomplete_workflows+=("$base_name: missing $(IFS=', '; echo "${missing_phases[*]}")")
         fi
-    done
+        done
+    fi
     
     # Return analysis
     echo "ANALYSIS_RESULTS"
@@ -185,7 +194,7 @@ final_check() {
     # Generate appropriate message based on compliance
     if [[ $(echo "$compliance_rate >= 80" | bc -l 2>/dev/null || echo "0") -eq 1 ]]; then
         echo '{
-            "decision": "allow",
+            "decision": "approve",
             "message": "✅ Excellent planning compliance! Most workflows completed all three phases.",
             "metadata": {
                 "compliance_rate": "'$compliance_rate'%",
@@ -194,7 +203,7 @@ final_check() {
         }'
     elif [[ $incomplete_count -gt 0 ]]; then
         echo '{
-            "decision": "allow",
+            "decision": "approve",
             "message": "📋 Some plans need Phase 2/3 documentation. Consider completing the workflow for better tracking.",
             "metadata": {
                 "compliance_rate": "'$compliance_rate'%",
@@ -203,7 +212,7 @@ final_check() {
             }
         }'
     else
-        echo '{"decision": "allow"}'
+        echo '{"decision": "approve"}'
     fi
 }
 
@@ -280,7 +289,7 @@ main() {
             echo "Compliance statistics updated"
             ;;
         *)
-            echo '{"decision": "allow", "message": "Plan tracker: Unknown command '$1'"}'
+            echo '{"decision": "approve", "message": "Plan tracker: Unknown command '$1'"}'
             ;;
     esac
 }

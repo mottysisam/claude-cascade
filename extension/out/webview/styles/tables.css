@@ -1,0 +1,287 @@
+/* Innovative table designs for Claude Cascade */
+
+.table-container {
+    margin: 20px 0;
+    overflow-x: auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    position: relative;
+}
+
+.plans-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-spacing: 0;
+    overflow: hidden;
+    background: rgba(var(--vscode-editor-background-rgb, 30,30,30), 0.7);
+    backdrop-filter: blur(10px);
+}
+
+/* Table header */
+.plans-table thead {
+    background: linear-gradient(90deg, 
+        rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.3),
+        rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.1)
+    );
+}
+
+.plans-table th {
+    text-align: left;
+    padding: 15px;
+    font-weight: 600;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--vscode-sideBarTitle-foreground);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    cursor: pointer;
+    user-select: none;
+}
+
+.plans-table th:hover {
+    background-color: rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.2);
+}
+
+/* Sort indicators */
+.sort-indicator {
+    display: inline-block;
+    margin-left: 5px;
+    transition: transform 0.2s ease;
+}
+
+.sort-asc .sort-indicator {
+    transform: rotate(0deg);
+}
+
+.sort-desc .sort-indicator {
+    transform: rotate(180deg);
+}
+
+/* Table body */
+.plans-table tbody tr {
+    border-bottom: 1px solid rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.1);
+    transition: all 0.2s ease;
+}
+
+.plans-table tbody tr:nth-child(odd) {
+    background-color: rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.05);
+}
+
+.plans-table tbody tr:hover {
+    background-color: rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.1);
+    transform: translateX(3px);
+}
+
+.plans-table td {
+    padding: 12px 15px;
+    font-size: 14px;
+    position: relative;
+}
+
+/* Plan name column with hover preview */
+.plan-name-cell {
+    font-weight: 500;
+    color: var(--vscode-textLink-foreground);
+    cursor: pointer;
+    position: relative;
+}
+
+.plan-name-cell:hover {
+    text-decoration: underline;
+}
+
+.plan-name {
+    display: inline-block;
+}
+
+.plan-preview {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 0;
+    width: 300px;
+    padding: 15px;
+    border-radius: 8px;
+    background: var(--vscode-editor-background);
+    border: 1px solid var(--vscode-panel-border);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    pointer-events: none;
+    transition: all 0.2s ease;
+}
+
+.plan-name-cell:hover .plan-preview {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.plan-preview h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+}
+
+.plan-preview-content {
+    font-size: 12px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+/* Status indicators */
+.status-indicators {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: rgba(var(--vscode-editor-background-rgb, 30,30,30), 0.7);
+    border: 1px solid rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.2);
+}
+
+.status-indicator:hover {
+    transform: translateY(-2px);
+}
+
+.status-indicator .indicator-icon {
+    margin-right: 4px;
+    font-size: 12px;
+}
+
+.status-complete {
+    color: var(--vscode-terminal-ansiGreen);
+    border-color: rgba(var(--vscode-terminal-ansiGreen-rgb, 0,200,0), 0.3);
+}
+
+.status-missing {
+    color: var(--vscode-terminal-ansiRed);
+    border-color: rgba(var(--vscode-terminal-ansiRed-rgb, 200,0,0), 0.3);
+}
+
+.status-inprogress {
+    color: var(--vscode-terminal-ansiYellow);
+    border-color: rgba(var(--vscode-terminal-ansiYellow-rgb, 200,200,0), 0.3);
+}
+
+/* Action buttons */
+.actions-cell {
+    display: flex;
+    gap: 5px;
+    justify-content: flex-end;
+}
+
+.action-btn {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: rgba(var(--vscode-button-background-rgb, 50,50,50), 0.7);
+    color: var(--vscode-button-foreground);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+}
+
+.action-btn:hover {
+    background-color: var(--vscode-button-hoverBackground);
+    transform: scale(1.1);
+}
+
+/* Empty state */
+.empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--vscode-descriptionForeground);
+}
+
+.empty-state-icon {
+    font-size: 48px;
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    justify-content: center;
+    padding: 15px 0;
+    gap: 5px;
+}
+
+.page-btn {
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: rgba(var(--vscode-button-background-rgb, 50,50,50), 0.7);
+    color: var(--vscode-button-foreground);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 14px;
+}
+
+.page-btn:hover:not(.page-current) {
+    background-color: var(--vscode-button-hoverBackground);
+}
+
+.page-current {
+    background-color: var(--vscode-button-foreground);
+    color: var(--vscode-button-background);
+    cursor: default;
+}
+
+/* Search and filter bar */
+.table-controls {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 15px;
+    gap: 10px;
+}
+
+.search-bar {
+    display: flex;
+    flex-grow: 1;
+    position: relative;
+}
+
+.search-input {
+    width: 100%;
+    padding: 8px 10px 8px 35px;
+    background: rgba(var(--vscode-input-background-rgb, 40,40,40), 0.7);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border);
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--vscode-descriptionForeground);
+}
+
+.filter-select {
+    padding: 8px 12px;
+    background: rgba(var(--vscode-dropdown-background-rgb, 40,40,40), 0.7);
+    color: var(--vscode-dropdown-foreground);
+    border: 1px solid var(--vscode-dropdown-border);
+    border-radius: 4px;
+    font-size: 14px;
+}

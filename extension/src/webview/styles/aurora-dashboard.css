@@ -1,0 +1,482 @@
+/* Aurora Dashboard Styles - Enhanced with Glass-morphism */
+/* Integrates with aurora-theme.css for consistent design */
+
+@import url('./aurora-theme.css');
+
+/* Navigation Bar Improvements */
+.aurora-navigation-bar .nav-button {
+    padding: 8px 12px !important;
+    font-size: 12px !important;
+    min-width: auto !important;
+}
+
+.aurora-navigation-bar .nav-button:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+}
+
+/* Button Size Variants */
+.aurora-btn-sm {
+    padding: 8px 16px !important;
+    font-size: 12px !important;
+}
+
+/* Improved Text Contrast */
+.aurora-dashboard {
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.aurora-main-title {
+    color: rgba(255, 255, 255, 0.95) !important;
+}
+
+.aurora-subtitle, .aurora-section-title, .activity-title, .aurora-phase-title {
+    color: rgba(255, 255, 255, 0.8) !important;
+}
+
+.stat-label, .aurora-compliance-stat-label {
+    color: rgba(255, 255, 255, 0.7) !important;
+}
+
+/* Quick Stats Cards Enhancement */
+.aurora-stat-card {
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid var(--aurora-glass-border) !important;
+    backdrop-filter: var(--aurora-glass-blur) !important;
+}
+
+/* Phase Cards Enhancement */
+.aurora-phase-card {
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+/* Dashboard Container */
+.aurora-dashboard {
+    width: 100%;
+    min-height: 100vh;
+    padding: 24px;
+    background: linear-gradient(
+        135deg,
+        var(--vscode-editor-background) 0%,
+        rgba(124, 58, 237, 0.02) 50%,
+        rgba(236, 72, 153, 0.02) 100%
+    );
+}
+
+/* Dashboard Header */
+.aurora-dashboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    padding: 24px;
+    background: var(--aurora-glass-bg);
+    backdrop-filter: var(--aurora-glass-blur);
+    border: 1px solid var(--aurora-glass-border);
+    border-radius: 20px;
+    box-shadow: var(--aurora-shadow-md);
+    animation: aurora-slide-down var(--aurora-transition-slow) var(--aurora-ease-out);
+}
+
+.aurora-logo-section {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.aurora-logo {
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--aurora-primary-gradient-start), var(--aurora-primary-gradient-end));
+    border-radius: 20px;
+    box-shadow: 0 8px 24px rgba(124, 58, 237, 0.3);
+    animation: aurora-glow 3s ease-in-out infinite;
+}
+
+.aurora-logo svg {
+    width: 36px;
+    height: 36px;
+    color: white;
+}
+
+.aurora-title-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.aurora-main-title {
+    font-size: 28px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--aurora-primary-gradient-start), var(--aurora-primary-gradient-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin: 0;
+}
+
+.aurora-subtitle {
+    font-size: 14px;
+    color: var(--vscode-descriptionForeground);
+    margin: 0;
+}
+
+/* Compliance Meter Section */
+.aurora-compliance-section {
+    margin-bottom: 40px;
+    padding: 32px;
+    background: var(--aurora-glass-bg);
+    backdrop-filter: var(--aurora-glass-blur);
+    border: 1px solid var(--aurora-glass-border);
+    border-radius: 24px;
+    box-shadow: var(--aurora-shadow-lg);
+    position: relative;
+    overflow: hidden;
+    animation: aurora-slide-up var(--aurora-transition-slow) var(--aurora-ease-out) 0.2s backwards;
+}
+
+.aurora-compliance-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, 
+        var(--aurora-primary-gradient-start),
+        var(--aurora-success-gradient-start),
+        var(--aurora-warning-gradient-start),
+        var(--aurora-primary-gradient-end)
+    );
+    animation: aurora-shimmer 3s linear infinite;
+}
+
+.aurora-compliance-meter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.aurora-compliance-ring {
+    position: relative;
+    width: 160px;
+    height: 160px;
+}
+
+.aurora-compliance-percentage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--aurora-primary-gradient-start), var(--aurora-primary-gradient-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.aurora-compliance-label {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--vscode-editor-foreground);
+    text-align: center;
+}
+
+.aurora-compliance-details {
+    display: flex;
+    justify-content: space-around;
+    width: 100%;
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid var(--aurora-glass-border);
+}
+
+.aurora-compliance-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+.aurora-compliance-stat-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.aurora-compliance-stat-label {
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Phase Cards Section */
+.aurora-phase-section {
+    margin-bottom: 40px;
+}
+
+.aurora-phase-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+}
+
+.aurora-phase-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--vscode-editor-foreground);
+}
+
+.aurora-phase-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+}
+
+.aurora-phase-card {
+    padding: 24px;
+    background: var(--aurora-glass-bg);
+    backdrop-filter: var(--aurora-glass-blur);
+    border: 1px solid var(--aurora-glass-border);
+    border-radius: 20px;
+    box-shadow: var(--aurora-shadow-md);
+    cursor: pointer;
+    transition: all var(--aurora-transition-normal) var(--aurora-ease-in-out);
+    position: relative;
+    overflow: hidden;
+    animation: aurora-slide-up var(--aurora-transition-slow) var(--aurora-ease-out) 0.4s backwards;
+}
+
+.aurora-phase-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, transparent, rgba(255, 255, 255, 0.05));
+    opacity: 0;
+    transition: opacity var(--aurora-transition-normal);
+}
+
+.aurora-phase-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: var(--aurora-shadow-xl);
+    border-color: var(--aurora-glass-border-hover);
+}
+
+.aurora-phase-card:hover::before {
+    opacity: 1;
+}
+
+.aurora-phase-card.phase-1 {
+    border-top: 3px solid var(--aurora-primary);
+}
+
+.aurora-phase-card.phase-2 {
+    border-top: 3px solid var(--aurora-success);
+}
+
+.aurora-phase-card.phase-3 {
+    border-top: 3px solid var(--aurora-warning);
+}
+
+.aurora-phase-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.aurora-phase-card-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--vscode-editor-foreground);
+}
+
+.aurora-phase-card-icon {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    background: var(--aurora-glass-bg);
+    backdrop-filter: var(--aurora-glass-blur);
+}
+
+.aurora-phase-card.phase-1 .aurora-phase-card-icon {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.1), rgba(168, 85, 247, 0.1));
+    color: var(--aurora-primary);
+}
+
+.aurora-phase-card.phase-2 .aurora-phase-card-icon {
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(20, 184, 166, 0.1));
+    color: var(--aurora-success);
+}
+
+.aurora-phase-card.phase-3 .aurora-phase-card-icon {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(251, 146, 60, 0.1));
+    color: var(--aurora-warning);
+}
+
+.aurora-phase-card-icon svg {
+    width: 28px;
+    height: 28px;
+}
+
+.aurora-phase-card-count {
+    font-size: 48px;
+    font-weight: 700;
+    margin: 16px 0;
+    background: linear-gradient(135deg, var(--aurora-primary-gradient-start), var(--aurora-primary-gradient-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.aurora-phase-card-description {
+    font-size: 14px;
+    color: var(--vscode-descriptionForeground);
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+.aurora-phase-card-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 16px;
+    border-top: 1px solid var(--aurora-glass-border);
+}
+
+.aurora-phase-card-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.aurora-phase-card-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: aurora-pulse 2s ease-in-out infinite;
+}
+
+.aurora-phase-card-status-dot.active {
+    background: var(--aurora-success);
+}
+
+.aurora-phase-card-status-dot.warning {
+    background: var(--aurora-warning);
+}
+
+.aurora-phase-card-status-dot.error {
+    background: var(--aurora-danger);
+}
+
+.aurora-phase-card-arrow {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--aurora-glass-bg);
+    color: var(--aurora-primary);
+    transition: all var(--aurora-transition-normal);
+}
+
+.aurora-phase-card:hover .aurora-phase-card-arrow {
+    background: var(--aurora-primary);
+    color: white;
+    transform: translateX(4px);
+}
+
+/* Analytics Section */
+.aurora-analytics-section {
+    margin-bottom: 40px;
+    padding: 32px;
+    background: var(--aurora-glass-bg);
+    backdrop-filter: var(--aurora-glass-blur);
+    border: 1px solid var(--aurora-glass-border);
+    border-radius: 24px;
+    box-shadow: var(--aurora-shadow-lg);
+    animation: aurora-slide-up var(--aurora-transition-slow) var(--aurora-ease-out) 0.6s backwards;
+}
+
+.aurora-analytics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.aurora-analytics-item {
+    padding: 20px;
+    background: var(--vscode-editor-background);
+    border-radius: 12px;
+    text-align: center;
+}
+
+.aurora-analytics-value {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--aurora-info-gradient-start), var(--aurora-info-gradient-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.aurora-analytics-label {
+    font-size: 12px;
+    color: var(--vscode-descriptionForeground);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Quick Actions */
+.aurora-quick-actions {
+    position: fixed;
+    bottom: 32px;
+    right: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: var(--aurora-z-sticky);
+}
+
+.aurora-fab {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--aurora-primary-gradient-start), var(--aurora-primary-gradient-end));
+    color: white;
+    border: none;
+    cursor: pointer;
+    box-shadow: var(--aurora-shadow-lg);
+    transition: all var(--aurora-transition-normal) var(--aurora-ease-in-out);
+}
+
+.aurora-fab:hover {
+    transform: scale(1.1);
+    box-shadow: var(--aurora-shadow-xl);
+}
+
+.aurora-fab svg {
+    width: 24px;
+    height: 24px;
+}

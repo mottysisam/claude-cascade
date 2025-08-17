@@ -1,0 +1,429 @@
+/* Compliance Dashboard Styles */
+
+.compliance-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.compliance-meter {
+    position: relative;
+    background: rgba(var(--vscode-editor-background-rgb, 30,30,30), 0.7);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.3);
+    overflow: hidden;
+}
+
+.compliance-percentage {
+    font-size: 42px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.compliance-label {
+    font-size: 16px;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.compliance-description {
+    text-align: center;
+    font-size: 14px;
+    color: var(--vscode-descriptionForeground);
+    margin-bottom: 15px;
+}
+
+.compliance-fill {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 5px;
+    width: 0;
+    transition: width 1.5s ease-in-out;
+}
+
+.compliance-fill.animate {
+    width: 100%;
+}
+
+/* Compliance status colors */
+.compliance-meter.excellent .compliance-percentage {
+    color: var(--vscode-terminal-ansiGreen);
+}
+
+.compliance-meter.excellent .compliance-fill {
+    background: linear-gradient(90deg, var(--vscode-terminal-ansiGreen), rgba(var(--vscode-terminal-ansiGreen-rgb, 0,200,0), 0.6));
+}
+
+.compliance-meter.good .compliance-percentage {
+    color: var(--vscode-charts-blue);
+}
+
+.compliance-meter.good .compliance-fill {
+    background: linear-gradient(90deg, var(--vscode-charts-blue), rgba(var(--vscode-charts-blue-rgb, 60,120,215), 0.6));
+}
+
+.compliance-meter.moderate .compliance-percentage {
+    color: var(--vscode-terminal-ansiYellow);
+}
+
+.compliance-meter.moderate .compliance-fill {
+    background: linear-gradient(90deg, var(--vscode-terminal-ansiYellow), rgba(var(--vscode-terminal-ansiYellow-rgb, 200,200,0), 0.6));
+}
+
+.compliance-meter.poor .compliance-percentage {
+    color: var(--vscode-terminal-ansiRed);
+}
+
+.compliance-meter.poor .compliance-fill {
+    background: linear-gradient(90deg, var(--vscode-terminal-ansiRed), rgba(var(--vscode-terminal-ansiRed-rgb, 200,0,0), 0.6));
+}
+
+/* Phase metrics section */
+.phase-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+}
+
+.metric-card {
+    background: rgba(var(--vscode-editor-background-rgb, 30,30,30), 0.7);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 15px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.3);
+    transition: transform 0.2s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-3px);
+}
+
+.metric-card h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 16px;
+}
+
+.metric-value {
+    font-size: 32px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.metric-label {
+    font-size: 14px;
+    color: var(--vscode-descriptionForeground);
+}
+
+/* Compliance details table */
+.compliance-details {
+    background: rgba(var(--vscode-editor-background-rgb, 30,30,30), 0.7);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.3);
+}
+
+.compliance-details h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+.compliance-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-spacing: 0;
+    overflow: hidden;
+}
+
+.compliance-table th, 
+.compliance-table td {
+    padding: 10px 15px;
+    text-align: left;
+}
+
+.compliance-table th {
+    background: rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.1);
+    font-weight: 600;
+    font-size: 14px;
+    border-bottom: 1px solid var(--vscode-panel-border);
+}
+
+.compliance-table td {
+    border-bottom: 1px solid rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.1);
+}
+
+.compliance-table tr:last-child td {
+    border-bottom: none;
+}
+
+.compliance-table tr:hover td {
+    background: rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.05);
+}
+
+/* Status styling */
+.compliance-table .status-planning td {
+    opacity: 0.7;
+}
+
+.compliance-table .status-complete td {
+    border-left: 3px solid rgba(var(--vscode-terminal-ansiGreen-rgb, 0,200,0), 0.7);
+}
+
+.compliance-table .status-inprogress td {
+    border-left: 3px solid rgba(var(--vscode-charts-blue-rgb, 60,120,215), 0.7);
+}
+
+.compliance-table .status-planning td {
+    border-left: 3px solid rgba(var(--vscode-charts-yellow-rgb, 255,185,0), 0.7);
+}
+
+.status-cell {
+    font-weight: 500;
+}
+
+.status-complete .status-cell {
+    color: var(--vscode-terminal-ansiGreen);
+}
+
+.status-inprogress .status-cell {
+    color: var(--vscode-charts-blue);
+}
+
+.status-planning .status-cell {
+    color: var(--vscode-charts-yellow);
+}
+
+/* Phase indicators */
+.phase-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    font-weight: bold;
+    transition: transform 0.2s ease;
+}
+
+.phase-indicator:hover {
+    transform: scale(1.2);
+    cursor: pointer;
+}
+
+.phase-complete {
+    background: rgba(var(--vscode-terminal-ansiGreen-rgb, 0,200,0), 0.2);
+    color: var(--vscode-terminal-ansiGreen);
+}
+
+.phase-missing {
+    background: rgba(var(--vscode-terminal-ansiRed-rgb, 200,0,0), 0.2);
+    color: var(--vscode-terminal-ansiRed);
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 30px;
+    color: var(--vscode-descriptionForeground);
+}
+
+/* Compliance violations */
+.compliance-violations {
+    background: rgba(var(--vscode-editor-background-rgb, 30,30,30), 0.7);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.3);
+}
+
+.compliance-violations h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+.violation-item {
+    display: flex;
+    margin-bottom: 15px;
+    padding: 15px;
+    border-radius: 6px;
+}
+
+.violation-item:last-child {
+    margin-bottom: 0;
+}
+
+.violation-item.warning {
+    background: rgba(var(--vscode-terminal-ansiYellow-rgb, 200,200,0), 0.1);
+    border-left: 3px solid var(--vscode-terminal-ansiYellow);
+}
+
+.violation-item.critical {
+    background: rgba(var(--vscode-terminal-ansiRed-rgb, 200,0,0), 0.1);
+    border-left: 3px solid var(--vscode-terminal-ansiRed);
+}
+
+.violation-icon {
+    font-size: 20px;
+    margin-right: 15px;
+}
+
+.warning .violation-icon {
+    color: var(--vscode-terminal-ansiYellow);
+}
+
+.critical .violation-icon {
+    color: var(--vscode-terminal-ansiRed);
+}
+
+.violation-content {
+    flex: 1;
+}
+
+.violation-message {
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.violation-details {
+    font-size: 14px;
+    color: var(--vscode-descriptionForeground);
+}
+
+/* No violations state */
+.no-violations-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 30px;
+    color: var(--vscode-descriptionForeground);
+}
+
+.no-violations-icon {
+    font-size: 32px;
+    color: var(--vscode-terminal-ansiGreen);
+    margin-bottom: 10px;
+}
+
+/* Compliance trends */
+.compliance-trends {
+    background: rgba(var(--vscode-editor-background-rgb, 30,30,30), 0.7);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.3);
+}
+
+.compliance-trends h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+.trend-chart {
+    margin-bottom: 30px;
+    height: 300px;
+}
+
+.chart-header {
+    margin-bottom: 15px;
+}
+
+.chart-header h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.trend-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+}
+
+.trend-stat {
+    padding: 15px;
+    border-radius: 6px;
+    background: rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.1);
+    text-align: center;
+}
+
+.trend-label {
+    font-size: 14px;
+    color: var(--vscode-descriptionForeground);
+    margin-bottom: 5px;
+}
+
+.trend-value {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.trend-value.positive {
+    color: var(--vscode-terminal-ansiGreen);
+}
+
+.trend-value.negative {
+    color: var(--vscode-terminal-ansiRed);
+}
+
+/* Actions section */
+.actions {
+    background: rgba(var(--vscode-editor-background-rgb, 30,30,30), 0.7);
+    backdrop-filter: blur(10px);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 30px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(var(--vscode-panel-border-rgb, 60,60,60), 0.3);
+}
+
+.actions h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+}
+
+.action-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+
+/* Footer */
+.footer {
+    margin-top: 40px;
+    padding: 20px;
+    border-top: 1px solid var(--vscode-panel-border);
+    text-align: center;
+}
+
+.footer-content {
+    font-size: 13px;
+    color: var(--vscode-descriptionForeground);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .compliance-summary {
+        flex-direction: column;
+    }
+    
+    .phase-metrics {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .action-buttons {
+        grid-template-columns: 1fr;
+    }
+}
