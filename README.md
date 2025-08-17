@@ -2,11 +2,35 @@
 
 **Intelligent Planning Workflows for Claude Code**
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/claudecascade/claude-cascade/releases)
+[![Version](https://img.shields.io/badge/version-1.0.3-blue.svg)](https://github.com/mottysisam/claude-cascade/releases)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](https://github.com/claudecascade/claude-cascade)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)](https://github.com/mottysisam/claude-cascade)
+[![Development](https://img.shields.io/badge/status-Active%20Development-orange.svg)](https://github.com/mottysisam/claude-cascade)
 
 > *Where intelligent planning workflows cascade through every phase of development*
+
+## ⚠️ **DEVELOPMENT NOTICE** ⚠️
+
+🚧 **THIS REPOSITORY IS IN ACTIVE DEVELOPMENT** 🚧
+
+**USE AT YOUR OWN RISK**
+
+This project is currently under heavy development and is **NOT** production-ready. By using this software, you acknowledge and accept the following:
+
+- ⚡ **Experimental Software**: Features may be unstable, incomplete, or change without notice
+- 🔧 **Breaking Changes**: Future updates may not be backward compatible
+- 🐛 **Bugs Expected**: You may encounter errors, crashes, or unexpected behavior
+- 📁 **Data Loss Risk**: Always backup your work before using any features
+- 🛡️ **No Warranties**: This software is provided "AS IS" without any guarantees
+- 👤 **Your Responsibility**: You are solely responsible for any consequences of using this software
+
+**Recommended for**: Developers, testers, and early adopters who want to experiment with cutting-edge planning workflows.
+
+**NOT recommended for**: Production environments, critical projects, or users who need stable software.
+
+If you encounter issues, please [report them](https://github.com/mottysisam/claude-cascade/issues) to help improve the project.
+
+---
 
 Claude Cascade transforms how you plan, execute, and verify work with Claude Code by introducing a sophisticated three-phase workflow system that ensures nothing falls through the cracks.
 
@@ -56,15 +80,51 @@ Claude Cascade implements a **three-phase planning workflow** that transforms ch
 
 ### Installation
 
-**macOS & Linux:**
+**⚠️ Development Installation Only:**
+
+**VSCode Extension (Latest):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/claudecascade/claude-cascade/main/install/install.sh | bash
+# Clone repository
+git clone https://github.com/mottysisam/claude-cascade.git
+cd claude-cascade/extension
+
+# Install latest VSIX
+code --install-extension claude-cascade-1.0.3.vsix
 ```
 
-**Windows (PowerShell):**
-```powershell
-irm https://raw.githubusercontent.com/claudecascade/claude-cascade/main/install/install.ps1 | iex
+**Manual Setup:**
+```bash
+# Clone and explore
+git clone https://github.com/mottysisam/claude-cascade.git
+cd claude-cascade
+
+# Review code before using
+ls -la extension/
 ```
+
+### VSCode Extension (v1.0.3) 🎨
+
+The Claude Cascade VSCode extension features a beautiful Aurora-themed dashboard with glassmorphism effects:
+
+**Features:**
+- 🎯 **Three-Phase Planning Dashboard** - Visual workflow management
+- 🌈 **Aurora Design System** - Purple/Indigo/Pink gradients with glassmorphism
+- 📊 **Real-time Compliance Monitoring** - Track project progress
+- 🔍 **Interactive Plan Navigation** - Browse and manage plans
+- ⚡ **Professional UI/UX** - Modern, responsive design
+
+**Installation:**
+```bash
+# Install latest version
+cd claude-cascade/extension
+code --install-extension claude-cascade-1.0.3.vsix
+```
+
+**Usage:**
+1. Open VSCode in your project
+2. Open Command Palette (`Cmd/Ctrl+Shift+P`)
+3. Type "Claude Cascade: Show Dashboard"
+4. Start planning with the three-phase system!
 
 ### Initialize Your First Project
 
@@ -72,11 +132,11 @@ irm https://raw.githubusercontent.com/claudecascade/claude-cascade/main/install/
 # Navigate to your project
 cd your-project
 
-# Initialize Cascade structure
-cascade init
+# Create .claude directory structure (manual for now)
+mkdir -p .claude/plans/{1_pre_exec_plans,2_post_exec_plans,3_checked_delta_exec_plans}
 
-# Start using Claude Code - Cascade will guide you!
-claude
+# Start using with VSCode extension or Claude Code
+code . # Open VSCode with extension
 ```
 
 ## 🎬 How It Works
@@ -416,9 +476,14 @@ We welcome contributions! See our [Contributing Guide](CONTRIBUTING.md) for deta
 ### Development Setup
 
 ```bash
-git clone https://github.com/claudecascade/claude-cascade.git
+git clone https://github.com/mottysisam/claude-cascade.git
 cd claude-cascade
-./scripts/dev-setup.sh
+
+# VSCode Extension Development
+cd extension
+npm install
+npm run compile
+npm run package  # Creates VSIX file
 ```
 
 ### Running Tests
@@ -441,19 +506,23 @@ Claude Cascade is MIT licensed. See [LICENSE](LICENSE) for details.
 
 ## 📞 Support
 
-- **Documentation**: [https://docs.claudecascade.dev](https://docs.claudecascade.dev)
-- **Issues**: [GitHub Issues](https://github.com/claudecascade/claude-cascade/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/claudecascade/claude-cascade/discussions)
-- **Email**: support@claudecascade.dev
+- **Issues**: [GitHub Issues](https://github.com/mottysisam/claude-cascade/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/mottysisam/claude-cascade/discussions)
+- **Repository**: [https://github.com/mottysisam/claude-cascade](https://github.com/mottysisam/claude-cascade)
+- **⚠️ Community Support Only**: No official commercial support available during development
 
 ---
 
 <div align="center">
 
+**⚠️ Experimental Project - Use at Your Own Risk**
+
 **Made with ❤️ for the Claude Code community**
 
-[🌊 Get Started](https://install.claudecascade.dev) • [📚 Documentation](https://docs.claudecascade.dev) • [💬 Community](https://github.com/claudecascade/claude-cascade/discussions)
+[📦 Repository](https://github.com/mottysisam/claude-cascade) • [🐛 Report Issues](https://github.com/mottysisam/claude-cascade/issues) • [💬 Discussions](https://github.com/mottysisam/claude-cascade/discussions)
 
-*Transform your development workflow today*
+*Experiment with cutting-edge planning workflows*
+
+**🚧 DEVELOPMENT VERSION - NOT PRODUCTION READY 🚧**
 
 </div>
