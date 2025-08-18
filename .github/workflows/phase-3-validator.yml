@@ -1,0 +1,427 @@
+name: 'Phase 3 Verification Validation'
+
+on:
+  pull_request:
+    paths:
+      - '.claude/plans/3_checked_delta_exec_plans/**'
+  push:
+    paths:
+      - '.claude/plans/3_checked_delta_exec_plans/**'
+  workflow_dispatch:
+    inputs:
+      verification_file:
+        description: 'Phase 3 verification file to validate'
+        required: false
+        type: string
+
+jobs:
+  validate-phase3-verification:
+    name: 'Validate Delta Verification'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Identify verification file
+        id: identify-verification
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.verification_file }}" ]]; then
+            # Use the file provided in workflow dispatch
+            VERIFY_FILE="${{ github.event.inputs.verification_file }}"
+          elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "push" ]]; then
+            # Get changed files in this push or PR
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              git fetch origin ${{ github.event.pull_request.base.ref }}
+              CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} ${{ github.sha }} | grep -E "^\.claude/plans/3_checked_delta_exec_plans/.*_VERIFICATION\.md$" || echo "")
+            else
+              CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "^\.claude/plans/3_checked_delta_exec_plans/.*_VERIFICATION\.md$" || echo "")
+            fi
+            
+            if [[ -n "$CHANGED_FILES" ]]; then
+              # Take the most recently modified file
+              VERIFY_FILE=$(echo "$CHANGED_FILES" | head -1)
+            else
+              # Fallback to the latest verification file
+              VERIFY_FILE=$(find .claude/plans/3_checked_delta_exec_plans -name "*_VERIFICATION.md" -type f -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}' || echo "")
+            fi
+          else
+            # Fallback to the latest verification file
+            VERIFY_FILE=$(find .claude/plans/3_checked_delta_exec_plans -name "*_VERIFICATION.md" -type f -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}' || echo "")
+          fi
+          
+          if [[ -z "$VERIFY_FILE" || ! -f "$VERIFY_FILE" ]]; then
+            echo "No valid Phase 3 verification file found!"
+            exit 1
+          fi
+          
+          echo "verification_file=$VERIFY_FILE" >> $GITHUB_OUTPUT
+          echo "verification_basename=$(basename "$VERIFY_FILE")" >> $GITHUB_OUTPUT
+          
+          # Extract plan name to find matching Phase 1 and 2 files
+          FILENAME=$(basename "$VERIFY_FILE")
+          if [[ "$FILENAME" =~ ^([0-9]{8})_([0-9]{6})_(.*)_VERIFICATION\.md$ ]]; then
+            DATE="${BASH_REMATCH[1]}"
+            TIME="${BASH_REMATCH[2]}"
+            NAME="${BASH_REMATCH[3]}"
+            
+            echo "plan_date=$DATE" >> $GITHUB_OUTPUT
+            echo "plan_time=$TIME" >> $GITHUB_OUTPUT
+            echo "plan_name=$NAME" >> $GITHUB_OUTPUT
+            
+            # Look for matching Phase 1 plan
+            PHASE1_DIR=".claude/plans/1_pre_exec_plans"
+            MATCHING_PHASE1=$(find "$PHASE1_DIR" -name "*${NAME}.md" -type f | head -1 || echo "")
+            
+            if [[ -n "$MATCHING_PHASE1" && -f "$MATCHING_PHASE1" ]]; then
+              echo "matching_phase1=$MATCHING_PHASE1" >> $GITHUB_OUTPUT
+              echo "has_matching_phase1=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_matching_phase1=false" >> $GITHUB_OUTPUT
+            fi
+            
+            # Look for matching Phase 2 execution
+            PHASE2_DIR=".claude/plans/2_post_exec_plans"
+            MATCHING_PHASE2=$(find "$PHASE2_DIR" -name "*${NAME}*_EXECUTED.md" -type f | head -1 || echo "")
+            
+            if [[ -n "$MATCHING_PHASE2" && -f "$MATCHING_PHASE2" ]]; then
+              echo "matching_phase2=$MATCHING_PHASE2" >> $GITHUB_OUTPUT
+              echo "has_matching_phase2=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_matching_phase2=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "::warning::Verification filename does not follow the convention: YYYYMMDD_HHMMSS_NAME_VERIFICATION.md"
+            echo "has_matching_phase1=false" >> $GITHUB_OUTPUT
+            echo "has_matching_phase2=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Validate verification structure
+        id: validate-structure
+        run: |
+          VERIFY_FILE="${{ steps.identify-verification.outputs.verification_file }}"
+          
+          echo "Validating verification structure for: $VERIFY_FILE"
+          
+          # Check if file exists
+          if [[ ! -f "$VERIFY_FILE" ]]; then
+            echo "Error: Verification file does not exist: $VERIFY_FILE"
+            exit 1
+          fi
+          
+          # Required sections to check for
+          declare -a REQUIRED_SECTIONS=("Verification Tests Performed" "Success Criteria Assessment" "Final Status")
+          MISSING_SECTIONS=""
+          
+          # Check for each required section
+          for section in "${REQUIRED_SECTIONS[@]}"; do
+            if ! grep -q "^## $section" "$VERIFY_FILE"; then
+              if [[ -z "$MISSING_SECTIONS" ]]; then
+                MISSING_SECTIONS="$section"
+              else
+                MISSING_SECTIONS="$MISSING_SECTIONS, $section"
+              fi
+            fi
+          done
+          
+          if [[ -n "$MISSING_SECTIONS" ]]; then
+            echo "::error::Missing required sections in verification record: $MISSING_SECTIONS"
+            echo "missing_sections=$MISSING_SECTIONS" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Check for actual verification tests
+          if ! grep -q -E "\*\*Command/Action:\*\*|\*\*Test:\*\*|\*\*Verification Method:\*\*" "$VERIFY_FILE"; then
+            echo "::error::No actual verification tests documented. Add specific commands or actions used to verify results."
+            echo "no_tests=true" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "no_tests=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for quantitative results
+          if ! grep -q -E "[0-9]+%|[0-9]+ (seconds|minutes|ms|tests)" "$VERIFY_FILE"; then
+            echo "::warning::No quantitative results found. Consider adding numeric metrics."
+            echo "has_metrics=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_metrics=true" >> $GITHUB_OUTPUT
+          fi
+          
+          # Check for pass/fail status in final status
+          FINAL_STATUS=$(sed -n '/^## Final Status/,/^##/p' "$VERIFY_FILE" | tail -n +2 | head -n -1 || echo "")
+          if ! echo "$FINAL_STATUS" | grep -q -E "PASS|FAIL|SUCCESS|COMPLETE|INCOMPLETE"; then
+            echo "::warning::No clear PASS/FAIL status found in Final Status section."
+            echo "has_status=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_status=true" >> $GITHUB_OUTPUT
+            
+            if echo "$FINAL_STATUS" | grep -q -E "PASS|SUCCESS|COMPLETE"; then
+              echo "pass_status=true" >> $GITHUB_OUTPUT
+            else
+              echo "pass_status=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+          
+          echo "Structure validation passed!"
+          echo "structure_valid=true" >> $GITHUB_OUTPUT
+          
+      - name: Verify success criteria
+        id: verify-success-criteria
+        if: steps.identify-verification.outputs.has_matching_phase1 == 'true'
+        run: |
+          PHASE1_FILE="${{ steps.identify-verification.outputs.matching_phase1 }}"
+          VERIFY_FILE="${{ steps.identify-verification.outputs.verification_file }}"
+          
+          echo "Checking success criteria from original plan..."
+          
+          # Extract success criteria from Phase 1 plan
+          PHASE1_CRITERIA=$(sed -n '/^## Success Criteria/,/^##/p' "$PHASE1_FILE" | tail -n +2 | head -n -1 || echo "")
+          
+          # Extract success criteria assessment from Phase 3
+          PHASE3_ASSESSMENT=$(sed -n '/^## Success Criteria Assessment/,/^##/p' "$VERIFY_FILE" | tail -n +2 | head -n -1 || echo "")
+          
+          # Count criteria and assessments (rough estimate)
+          CRITERIA_COUNT=$(echo "$PHASE1_CRITERIA" | grep -c "^- " || echo 0)
+          ASSESSMENT_COUNT=$(echo "$PHASE3_ASSESSMENT" | grep -c "^- " || echo 0)
+          
+          echo "Original plan had approximately $CRITERIA_COUNT success criteria"
+          echo "Verification assessed approximately $ASSESSMENT_COUNT criteria"
+          
+          echo "criteria_count=$CRITERIA_COUNT" >> $GITHUB_OUTPUT
+          echo "assessment_count=$ASSESSMENT_COUNT" >> $GITHUB_OUTPUT
+          
+          if [[ $ASSESSMENT_COUNT -lt $CRITERIA_COUNT ]]; then
+            echo "::warning::Not all success criteria appear to be assessed. Original plan had $CRITERIA_COUNT criteria, but verification assessed $ASSESSMENT_COUNT."
+            echo "all_criteria_assessed=false" >> $GITHUB_OUTPUT
+          else
+            echo "all_criteria_assessed=true" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Extract verification metadata
+        id: extract-metadata
+        run: |
+          VERIFY_FILE="${{ steps.identify-verification.outputs.verification_file }}"
+          
+          # Extract verification title (first heading)
+          TITLE=$(head -n 1 "$VERIFY_FILE" | sed 's/^# *//')
+          echo "verification_title=$TITLE" >> $GITHUB_OUTPUT
+          
+          # Extract final status summary
+          FINAL_STATUS=$(sed -n '/^## Final Status/,/^##/p' "$VERIFY_FILE" | tail -n +2 | head -n -1 | tr '\n' ' ' | sed 's/^ *//' | sed 's/ *$//' | cut -c 1-200)
+          echo "final_status=$FINAL_STATUS" >> $GITHUB_OUTPUT
+          
+      - name: Generate validation report
+        id: validation-report
+        run: |
+          VERIFY_FILE="${{ steps.identify-verification.outputs.verification_file }}"
+          VERIFY_BASENAME="${{ steps.identify-verification.outputs.verification_basename }}"
+          
+          echo "## Phase 3 Verification Validation" > validation_report.md
+          echo "" >> validation_report.md
+          echo "**Verification Record**: [\`$VERIFY_BASENAME\`](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/$VERIFY_FILE)" >> validation_report.md
+          echo "" >> validation_report.md
+          
+          if [[ -n "${{ steps.extract-metadata.outputs.verification_title }}" ]]; then
+            echo "**Title**: ${{ steps.extract-metadata.outputs.verification_title }}" >> validation_report.md
+          fi
+          
+          # References to previous phases
+          echo "### Plan References" >> validation_report.md
+          echo "" >> validation_report.md
+          
+          if [[ "${{ steps.identify-verification.outputs.has_matching_phase1 }}" == "true" ]]; then
+            PHASE1_BASENAME=$(basename "${{ steps.identify-verification.outputs.matching_phase1 }}")
+            echo "✅ **Phase 1 Plan**: [\`$PHASE1_BASENAME\`](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/${{ steps.identify-verification.outputs.matching_phase1 }})" >> validation_report.md
+          else
+            echo "❌ **Phase 1 Plan**: No matching plan found" >> validation_report.md
+          fi
+          
+          if [[ "${{ steps.identify-verification.outputs.has_matching_phase2 }}" == "true" ]]; then
+            PHASE2_BASENAME=$(basename "${{ steps.identify-verification.outputs.matching_phase2 }}")
+            echo "✅ **Phase 2 Execution**: [\`$PHASE2_BASENAME\`](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/${{ steps.identify-verification.outputs.matching_phase2 }})" >> validation_report.md
+          else
+            echo "❌ **Phase 2 Execution**: No matching execution record found" >> validation_report.md
+          fi
+          
+          echo "" >> validation_report.md
+          echo "### Validation Results" >> validation_report.md
+          echo "" >> validation_report.md
+          
+          if [[ "${{ steps.validate-structure.outputs.structure_valid }}" == "true" ]]; then
+            echo "✅ **Structure**: Verification structure is valid" >> validation_report.md
+          else
+            echo "❌ **Structure**: Verification structure is invalid" >> validation_report.md
+            
+            if [[ -n "${{ steps.validate-structure.outputs.missing_sections }}" ]]; then
+              echo "  - Missing required sections: ${{ steps.validate-structure.outputs.missing_sections }}" >> validation_report.md
+            fi
+          fi
+          
+          # Test validation
+          if [[ "${{ steps.validate-structure.outputs.no_tests }}" == "true" ]]; then
+            echo "❌ **Verification Tests**: No actual tests documented" >> validation_report.md
+          else
+            echo "✅ **Verification Tests**: Tests documented" >> validation_report.md
+          fi
+          
+          # Metrics validation
+          if [[ "${{ steps.validate-structure.outputs.has_metrics }}" == "true" ]]; then
+            echo "✅ **Quantitative Metrics**: Verification includes measurable results" >> validation_report.md
+          else
+            echo "⚠️ **Quantitative Metrics**: No numeric metrics found. Consider adding measurable results." >> validation_report.md
+          fi
+          
+          # Success criteria assessment
+          if [[ "${{ steps.identify-verification.outputs.has_matching_phase1 }}" == "true" ]]; then
+            if [[ "${{ steps.verify-success-criteria.outputs.all_criteria_assessed }}" == "true" ]]; then
+              echo "✅ **Success Criteria**: All criteria from original plan assessed (${steps.verify-success-criteria.outputs.assessment_count}/${steps.verify-success-criteria.outputs.criteria_count})" >> validation_report.md
+            else
+              echo "⚠️ **Success Criteria**: Not all criteria assessed (${steps.verify-success-criteria.outputs.assessment_count}/${steps.verify-success-criteria.outputs.criteria_count})" >> validation_report.md
+            fi
+          fi
+          
+          # Final status
+          if [[ "${{ steps.validate-structure.outputs.has_status }}" == "true" ]]; then
+            if [[ "${{ steps.validate-structure.outputs.pass_status }}" == "true" ]]; then
+              echo "✅ **Final Status**: PASS - Verification successful" >> validation_report.md
+            else
+              echo "❌ **Final Status**: FAIL - Verification unsuccessful" >> validation_report.md
+            fi
+          else
+            echo "⚠️ **Final Status**: No clear pass/fail status provided" >> validation_report.md
+          fi
+          
+          echo "" >> validation_report.md
+          echo "### Overall Assessment" >> validation_report.md
+          echo "" >> validation_report.md
+          
+          # Calculate overall completion score
+          SCORE=0
+          TOTAL=5
+          
+          if [[ "${{ steps.validate-structure.outputs.structure_valid }}" == "true" ]]; then
+            SCORE=$((SCORE + 1))
+          fi
+          
+          if [[ "${{ steps.validate-structure.outputs.no_tests }}" == "false" ]]; then
+            SCORE=$((SCORE + 1))
+          fi
+          
+          if [[ "${{ steps.validate-structure.outputs.has_metrics }}" == "true" ]]; then
+            SCORE=$((SCORE + 1))
+          fi
+          
+          if [[ "${{ steps.verify-success-criteria.outputs.all_criteria_assessed }}" == "true" ]]; then
+            SCORE=$((SCORE + 1))
+          fi
+          
+          if [[ "${{ steps.validate-structure.outputs.pass_status }}" == "true" ]]; then
+            SCORE=$((SCORE + 1))
+          fi
+          
+          PERCENTAGE=$((SCORE * 100 / TOTAL))
+          
+          echo "**Completion Score**: $PERCENTAGE% ($SCORE/$TOTAL)" >> validation_report.md
+          
+          if [[ $PERCENTAGE -eq 100 ]]; then
+            echo "**Status**: ✅ Complete verification - Ready to merge" >> validation_report.md
+          elif [[ $PERCENTAGE -ge 80 ]]; then
+            echo "**Status**: ⚠️ Mostly complete - Minor improvements recommended" >> validation_report.md
+          else
+            echo "**Status**: ❌ Incomplete verification - Significant improvements required" >> validation_report.md
+          fi
+          
+          if [[ -n "${{ steps.extract-metadata.outputs.final_status }}" ]]; then
+            echo "" >> validation_report.md
+            echo "### Final Status (from verification)" >> validation_report.md
+            echo "" >> validation_report.md
+            echo "${{ steps.extract-metadata.outputs.final_status }}" >> validation_report.md
+          fi
+          
+          cat validation_report.md
+          
+      - name: Comment on PR with validation results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('validation_report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+            
+      - name: Set PR status check
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const structureValid = '${{ steps.validate-structure.outputs.structure_valid }}' === 'true';
+            const hasTests = '${{ steps.validate-structure.outputs.no_tests }}' === 'false';
+            const hasMetrics = '${{ steps.validate-structure.outputs.has_metrics }}' === 'true';
+            const allCriteriaAssessed = '${{ steps.verify-success-criteria.outputs.all_criteria_assessed }}' === 'true';
+            const passStatus = '${{ steps.validate-structure.outputs.pass_status }}' === 'true';
+            
+            // Structure validation check
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 3 Structure',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: structureValid ? 'success' : 'failure',
+              output: {
+                title: structureValid ? 'Phase 3 Verification Structure Valid' : 'Phase 3 Verification Structure Invalid',
+                summary: structureValid 
+                  ? 'The verification record meets all structural requirements.'
+                  : 'The verification record is missing required sections or has structural issues.'
+              }
+            });
+            
+            // Test documentation check
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 3 Tests',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: hasTests ? 'success' : 'failure',
+              output: {
+                title: hasTests ? 'Verification Tests Documented' : 'No Verification Tests',
+                summary: hasTests 
+                  ? 'The verification includes documented test commands or procedures.'
+                  : 'No specific verification tests are documented. Add specific commands or actions used to verify results.'
+              }
+            });
+            
+            // Final status check
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 3 Status',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: passStatus ? 'success' : 'failure',
+              output: {
+                title: passStatus ? 'Verification Passed' : 'Verification Failed',
+                summary: passStatus 
+                  ? 'The verification record indicates a successful pass status.'
+                  : 'The verification record indicates a failure or does not clearly indicate success.'
+              }
+            });

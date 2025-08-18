@@ -1,0 +1,35 @@
+{
+  "name": "claude-cascade-validation",
+  "version": "1.0.0",
+  "description": "Validation scripts for Claude Cascade three-phase planning workflow",
+  "main": "validate-phases.js",
+  "scripts": {
+    "test": "node validate-phases.js",
+    "validate": "node validate-phases.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mottysisam/claude-cascade.git"
+  },
+  "keywords": [
+    "claude",
+    "cascade",
+    "validation",
+    "workflow"
+  ],
+  "author": "Claude Cascade Team",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/mottysisam/claude-cascade/issues"
+  },
+  "homepage": "https://github.com/mottysisam/claude-cascade#readme",
+  "dependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/github": "^5.1.1",
+    "chalk": "^4.1.2",
+    "front-matter": "^4.0.2",
+    "glob": "^10.3.3",
+    "js-yaml": "^4.1.0",
+    "markdown-it": "^13.0.1"
+  }
+}

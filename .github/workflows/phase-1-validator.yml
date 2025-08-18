@@ -1,0 +1,258 @@
+name: 'Phase 1 Plan Validation'
+
+on:
+  pull_request:
+    paths:
+      - '.claude/plans/1_pre_exec_plans/**'
+  push:
+    paths:
+      - '.claude/plans/1_pre_exec_plans/**'
+  workflow_dispatch:
+    inputs:
+      plan_file:
+        description: 'Phase 1 plan file to validate'
+        required: false
+        type: string
+
+jobs:
+  validate-phase1-plan:
+    name: 'Validate Pre-Execution Plan'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Identify plan file
+        id: identify-plan
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.plan_file }}" ]]; then
+            # Use the file provided in workflow dispatch
+            PLAN_FILE="${{ github.event.inputs.plan_file }}"
+          elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "push" ]]; then
+            # Get changed files in this push or PR
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              git fetch origin ${{ github.event.pull_request.base.ref }}
+              CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} ${{ github.sha }} | grep -E "^\.claude/plans/1_pre_exec_plans/.*\.md$" || echo "")
+            else
+              CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "^\.claude/plans/1_pre_exec_plans/.*\.md$" || echo "")
+            fi
+            
+            if [[ -n "$CHANGED_FILES" ]]; then
+              # Take the most recently modified file
+              PLAN_FILE=$(echo "$CHANGED_FILES" | head -1)
+            else
+              # Fallback to the latest plan file
+              PLAN_FILE=$(find .claude/plans/1_pre_exec_plans -name "*.md" -type f -not -name "README.md" -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}' || echo "")
+            fi
+          else
+            # Fallback to the latest plan file
+            PLAN_FILE=$(find .claude/plans/1_pre_exec_plans -name "*.md" -type f -not -name "README.md" -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}' || echo "")
+          fi
+          
+          if [[ -z "$PLAN_FILE" || ! -f "$PLAN_FILE" ]]; then
+            echo "No valid Phase 1 plan file found!"
+            exit 1
+          fi
+          
+          echo "plan_file=$PLAN_FILE" >> $GITHUB_OUTPUT
+          echo "plan_basename=$(basename "$PLAN_FILE")" >> $GITHUB_OUTPUT
+          
+      - name: Validate plan structure
+        id: validate-structure
+        run: |
+          PLAN_FILE="${{ steps.identify-plan.outputs.plan_file }}"
+          
+          echo "Validating plan structure for: $PLAN_FILE"
+          
+          # Check if file exists
+          if [[ ! -f "$PLAN_FILE" ]]; then
+            echo "Error: Plan file does not exist: $PLAN_FILE"
+            exit 1
+          fi
+          
+          # Required sections to check for
+          declare -a REQUIRED_SECTIONS=("Objective" "Detailed Steps" "Success Criteria")
+          MISSING_SECTIONS=""
+          
+          # Check for each required section
+          for section in "${REQUIRED_SECTIONS[@]}"; do
+            if ! grep -q "^## $section" "$PLAN_FILE"; then
+              if [[ -z "$MISSING_SECTIONS" ]]; then
+                MISSING_SECTIONS="$section"
+              else
+                MISSING_SECTIONS="$MISSING_SECTIONS, $section"
+              fi
+            fi
+          done
+          
+          if [[ -n "$MISSING_SECTIONS" ]]; then
+            echo "::error::Missing required sections in plan: $MISSING_SECTIONS"
+            echo "missing_sections=$MISSING_SECTIONS" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Check plan content length
+          MIN_CONTENT_LENGTH=500
+          CONTENT_LENGTH=$(wc -c < "$PLAN_FILE")
+          
+          if [[ $CONTENT_LENGTH -lt $MIN_CONTENT_LENGTH ]]; then
+            echo "::warning::Plan content is unusually short ($CONTENT_LENGTH chars). Consider adding more detail."
+          fi
+          
+          # Check for implementation steps
+          if ! grep -q -E "^### [0-9]+\." "$PLAN_FILE"; then
+            echo "::warning::No numbered implementation steps found. Consider adding detailed step-by-step instructions."
+          fi
+          
+          # Check for success criteria with measurable metrics
+          SUCCESS_SECTION=$(sed -n '/^## Success Criteria/,/^##/p' "$PLAN_FILE" | head -n -1)
+          if ! echo "$SUCCESS_SECTION" | grep -q -E "[0-9]+%|[0-9]+ (seconds|minutes|hours|ms)"; then
+            echo "::warning::No measurable metrics found in Success Criteria. Consider adding quantifiable success metrics."
+          fi
+          
+          echo "Structure validation passed!"
+          echo "structure_valid=true" >> $GITHUB_OUTPUT
+          
+      - name: Extract plan metadata
+        id: extract-metadata
+        run: |
+          PLAN_FILE="${{ steps.identify-plan.outputs.plan_file }}"
+          
+          # Extract plan name from filename
+          FILENAME=$(basename "$PLAN_FILE")
+          if [[ "$FILENAME" =~ ^([0-9]{8})_([0-9]{6})_(.*)\.md$ ]]; then
+            DATE="${BASH_REMATCH[1]}"
+            TIME="${BASH_REMATCH[2]}"
+            NAME="${BASH_REMATCH[3]}"
+            
+            echo "plan_date=$DATE" >> $GITHUB_OUTPUT
+            echo "plan_time=$TIME" >> $GITHUB_OUTPUT
+            echo "plan_name=$NAME" >> $GITHUB_OUTPUT
+            
+            # Format date for display
+            FORMATTED_DATE="${DATE:0:4}-${DATE:4:2}-${DATE:6:2}"
+            echo "formatted_date=$FORMATTED_DATE" >> $GITHUB_OUTPUT
+          else
+            echo "::warning::Plan filename does not follow the convention: YYYYMMDD_HHMMSS_NAME.md"
+          fi
+          
+          # Extract plan title (first heading)
+          TITLE=$(head -n 1 "$PLAN_FILE" | sed 's/^# *//')
+          echo "plan_title=$TITLE" >> $GITHUB_OUTPUT
+          
+          # Extract objective
+          OBJECTIVE=$(sed -n '/^## Objective/,/^##/p' "$PLAN_FILE" | tail -n +2 | head -n -1 | tr '\n' ' ' | sed 's/^ *//' | sed 's/ *$//')
+          echo "plan_objective=$OBJECTIVE" >> $GITHUB_OUTPUT
+          
+      - name: Generate validation report
+        id: validation-report
+        run: |
+          PLAN_FILE="${{ steps.identify-plan.outputs.plan_file }}"
+          PLAN_BASENAME="${{ steps.identify-plan.outputs.plan_basename }}"
+          
+          echo "## Phase 1 Plan Validation Report" > validation_report.md
+          echo "" >> validation_report.md
+          echo "**Plan**: [\`$PLAN_BASENAME\`](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/$PLAN_FILE)" >> validation_report.md
+          echo "" >> validation_report.md
+          
+          if [[ -n "${{ steps.extract-metadata.outputs.plan_title }}" ]]; then
+            echo "**Title**: ${{ steps.extract-metadata.outputs.plan_title }}" >> validation_report.md
+          fi
+          
+          if [[ -n "${{ steps.extract-metadata.outputs.formatted_date }}" ]]; then
+            echo "**Date**: ${{ steps.extract-metadata.outputs.formatted_date }}" >> validation_report.md
+          fi
+          
+          echo "" >> validation_report.md
+          echo "### Validation Results" >> validation_report.md
+          echo "" >> validation_report.md
+          
+          if [[ "${{ steps.validate-structure.outputs.structure_valid }}" == "true" ]]; then
+            echo "✅ **Structure**: Plan structure is valid" >> validation_report.md
+          else
+            echo "❌ **Structure**: Plan structure is invalid" >> validation_report.md
+            
+            if [[ -n "${{ steps.validate-structure.outputs.missing_sections }}" ]]; then
+              echo "  - Missing required sections: ${{ steps.validate-structure.outputs.missing_sections }}" >> validation_report.md
+            fi
+          fi
+          
+          # Check for objectives
+          if [[ -n "${{ steps.extract-metadata.outputs.plan_objective }}" ]]; then
+            OBJECTIVE_LENGTH=${#steps.extract-metadata.outputs.plan_objective}
+            if [[ $OBJECTIVE_LENGTH -lt 50 ]]; then
+              echo "⚠️ **Objective**: Objective is too brief ($OBJECTIVE_LENGTH chars). Consider expanding." >> validation_report.md
+            else
+              echo "✅ **Objective**: Objective is well-defined" >> validation_report.md
+            fi
+          else
+            echo "❌ **Objective**: No objective found" >> validation_report.md
+          fi
+          
+          # Check for success criteria
+          SUCCESS_CRITERIA_COUNT=$(grep -c "^- " <<< "$(sed -n '/^## Success Criteria/,/^##/p' "$PLAN_FILE" | head -n -1 | tail -n +2)")
+          
+          if [[ $SUCCESS_CRITERIA_COUNT -lt 3 ]]; then
+            echo "⚠️ **Success Criteria**: Only $SUCCESS_CRITERIA_COUNT criteria found. Consider adding more." >> validation_report.md
+          else
+            echo "✅ **Success Criteria**: $SUCCESS_CRITERIA_COUNT success criteria defined" >> validation_report.md
+          fi
+          
+          echo "" >> validation_report.md
+          echo "### Next Steps" >> validation_report.md
+          echo "" >> validation_report.md
+          echo "1. **Execute** this plan and document the results in a Phase 2 file" >> validation_report.md
+          echo "2. Create a file in \`.claude/plans/2_post_exec_plans/\` with suffix \`_EXECUTED.md\`" >> validation_report.md
+          echo "3. After execution, validate the results with a Phase 3 verification" >> validation_report.md
+          
+          cat validation_report.md
+          
+      - name: Comment on PR with validation results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('validation_report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+            
+      - name: Set PR status check
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const isValid = '${{ steps.validate-structure.outputs.structure_valid }}' === 'true';
+            
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 1 Validation',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: isValid ? 'success' : 'failure',
+              output: {
+                title: isValid ? 'Phase 1 Plan Validated' : 'Phase 1 Plan Invalid',
+                summary: isValid 
+                  ? 'The pre-execution plan meets all structural requirements.'
+                  : 'The pre-execution plan is missing required sections or has structural issues.'
+              }
+            });
