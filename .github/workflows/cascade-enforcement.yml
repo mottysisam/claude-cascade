@@ -32,6 +32,7 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
+          cache-dependency-path: .github/scripts/package.json
           
       - name: Install dependencies
         run: npm ci
@@ -59,10 +60,20 @@ jobs:
           git commit -m "[SYSTEM] Initialize Claude Cascade directory structure"
           git push
         continue-on-error: true
-        
-      - name: Extract PR information
+          
+      # Run the validation script
+      - name: Validate Three-Phase Workflow
+        id: validate-phases
+        run: |
+          echo "Running comprehensive validation of three-phase workflow..."
+          node .github/scripts/validate-phases.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      # Fallback to basic checks if the validation script fails
+      - name: Extract PR information (Fallback)
         id: pr-info
-        if: github.event_name == 'pull_request'
+        if: failure() && github.event_name == 'pull_request'
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           PR_TITLE="${{ github.event.pull_request.title }}"
@@ -81,8 +92,9 @@ jobs:
             echo "has_plan_name=false" >> $GITHUB_OUTPUT
           fi
           
-      - name: Check for Phase 1 plan
+      - name: Check for Phase 1 plan (Fallback)
         id: phase-1-check
+        if: failure() && steps.pr-info.outcome == 'success'
         run: |
           PLANS_DIR=".claude/plans/1_pre_exec_plans"
           
@@ -101,9 +113,9 @@ jobs:
             echo "phase_1_exists=false" >> $GITHUB_OUTPUT
           fi
           
-      - name: Check for Phase 2 execution record
+      - name: Check for Phase 2 execution record (Fallback)
         id: phase-2-check
-        if: steps.phase-1-check.outputs.phase_1_exists == 'true'
+        if: failure() && steps.phase-1-check.outcome == 'success' && steps.phase-1-check.outputs.phase_1_exists == 'true'
         run: |
           PLANS_DIR=".claude/plans/2_post_exec_plans"
           PLAN_NAME="${{ steps.phase-1-check.outputs.plan_name }}"
@@ -126,9 +138,9 @@ jobs:
             echo "phase_2_exists=false" >> $GITHUB_OUTPUT
           fi
           
-      - name: Check for Phase 3 verification
+      - name: Check for Phase 3 verification (Fallback)
         id: phase-3-check
-        if: steps.phase-2-check.outputs.phase_2_exists == 'true'
+        if: failure() && steps.phase-2-check.outcome == 'success' && steps.phase-2-check.outputs.phase_2_exists == 'true'
         run: |
           PLANS_DIR=".claude/plans/3_checked_delta_exec_plans"
           PLAN_NAME="${{ steps.phase-1-check.outputs.plan_name }}"
@@ -151,17 +163,13 @@ jobs:
             echo "phase_3_exists=false" >> $GITHUB_OUTPUT
           fi
           
-      - name: Parse Phase 1 plan
-        id: parse-plan
-        if: steps.phase-1-check.outputs.phase_1_exists == 'true'
-        uses: ./.github/actions/plan-parser
-        with:
-          plan_file: ${{ steps.phase-1-check.outputs.latest_plan }}
-          
-      - name: Generate Phase Status Report
+      - name: Generate Phase Status Report (Fallback)
         id: phase-status
+        if: failure() && steps.phase-1-check.outcome == 'success'
         run: |
-          echo "## Claude Cascade Phase Status" > phase_status.md
+          echo "## Claude Cascade Phase Status (Fallback)" > phase_status.md
+          echo "" >> phase_status.md
+          echo "⚠️ Advanced validation script failed. Using basic validation instead." >> phase_status.md
           echo "" >> phase_status.md
           
           # Phase 1 status
@@ -219,8 +227,8 @@ jobs:
           
           cat phase_status.md
           
-      - name: Comment on PR
-        if: github.event_name == 'pull_request'
+      - name: Comment on PR (Fallback)
+        if: failure() && github.event_name == 'pull_request' && steps.phase-status.outcome == 'success'
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -235,8 +243,8 @@ jobs:
               body: status
             });
             
-      - name: Set PR Status Check
-        if: github.event_name == 'pull_request'
+      - name: Set PR Status Check (Fallback)
+        if: failure() && github.event_name == 'pull_request' && steps.phase-1-check.outcome == 'success'
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -249,7 +257,7 @@ jobs:
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: 'Claude Cascade - Phase 1',
+              name: 'Claude Cascade - Phase 1 (Fallback)',
               head_sha: context.payload.pull_request.head.sha,
               status: 'completed',
               conclusion: phase1Exists ? 'success' : 'failure',
@@ -265,7 +273,7 @@ jobs:
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: 'Claude Cascade - Phase 2',
+              name: 'Claude Cascade - Phase 2 (Fallback)',
               head_sha: context.payload.pull_request.head.sha,
               status: 'completed',
               conclusion: phase2Exists ? 'success' : 'failure',
@@ -281,7 +289,7 @@ jobs:
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: 'Claude Cascade - Phase 3',
+              name: 'Claude Cascade - Phase 3 (Fallback)',
               head_sha: context.payload.pull_request.head.sha,
               status: 'completed',
               conclusion: phase3Exists ? 'success' : 'failure',
@@ -298,7 +306,7 @@ jobs:
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: 'Claude Cascade - Complete Workflow',
+              name: 'Claude Cascade - Complete Workflow (Fallback)',
               head_sha: context.payload.pull_request.head.sha,
               status: 'completed',
               conclusion: allComplete ? 'success' : 'failure',

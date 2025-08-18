@@ -38,6 +38,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: .github/scripts/package.json
           
       - name: Get PR number
         id: get-pr-number
@@ -85,9 +87,25 @@ jobs:
           # Fetch PR branch
           git fetch origin $HEAD_REF
           git checkout $HEAD_SHA
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: .github/scripts
+        
+      # Run advanced validation with our new scripts
+      - name: Run advanced plan validation
+        id: validate-phases
+        run: |
+          echo "Running comprehensive validation of three-phase workflow..."
+          node .github/scripts/validate-phases.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
           
-      - name: Check for Phase 1 plans
+      # Fallback to basic checks if the validation script fails
+      - name: Check for Phase 1 plans (Fallback)
         id: check-phase1
+        if: steps.validate-phases.outcome != 'success'
         run: |
           PLANS_DIR=".claude/plans/1_pre_exec_plans"
           
@@ -126,9 +144,9 @@ jobs:
             echo "::error::No Phase 1 plans found"
           fi
           
-      - name: Check for Phase 2 execution records
+      - name: Check for Phase 2 execution records (Fallback)
         id: check-phase2
-        if: steps.check-phase1.outputs.phase1_exists == 'true'
+        if: steps.validate-phases.outcome != 'success' && steps.check-phase1.outputs.phase1_exists == 'true'
         run: |
           PHASE1_DIR=".claude/plans/1_pre_exec_plans"
           PHASE2_DIR=".claude/plans/2_post_exec_plans"
@@ -190,9 +208,9 @@ jobs:
             echo "::error::No Phase 2 execution records found"
           fi
           
-      - name: Check for Phase 3 verifications
+      - name: Check for Phase 3 verifications (Fallback)
         id: check-phase3
-        if: steps.check-phase2.outputs.phase2_exists == 'true'
+        if: steps.validate-phases.outcome != 'success' && steps.check-phase2.outputs.phase2_exists == 'true'
         run: |
           PHASE3_DIR=".claude/plans/3_checked_delta_exec_plans"
           
@@ -258,8 +276,9 @@ jobs:
             echo "::error::No Phase 3 verifications found"
           fi
           
-      - name: Generate compliance report
+      - name: Generate compliance report (Fallback)
         id: compliance-report
+        if: steps.validate-phases.outcome != 'success'
         run: |
           PR_NUMBER="${{ steps.get-pr-number.outputs.pr_number }}"
           HEAD_SHA="${{ steps.fetch-pr-branch.outputs.head_sha }}"
@@ -306,7 +325,9 @@ jobs:
           fi
           
           # Generate the report
-          echo "## Claude Cascade Workflow Status" > compliance_report.md
+          echo "## Claude Cascade Workflow Status (Fallback Validation)" > compliance_report.md
+          echo "" >> compliance_report.md
+          echo "⚠️ **Note**: Advanced validation script failed, using basic validation instead." >> compliance_report.md
           echo "" >> compliance_report.md
           echo "**Pull Request**: #$PR_NUMBER ($HEAD_REF → $BASE_REF)" >> compliance_report.md
           echo "**Status**: $MERGE_STATUS" >> compliance_report.md
@@ -415,8 +436,8 @@ jobs:
           
           cat compliance_report.md
           
-      - name: Comment on PR with compliance report
-        if: steps.get-pr-number.outputs.pr_number != ''
+      - name: Comment on PR with compliance report (Fallback)
+        if: steps.validate-phases.outcome != 'success' && steps.get-pr-number.outputs.pr_number != ''
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -431,8 +452,8 @@ jobs:
               body: report
             });
             
-      - name: Set PR status check
-        if: steps.get-pr-number.outputs.pr_number != ''
+      - name: Set PR status check (Fallback)
+        if: steps.validate-phases.outcome != 'success' && steps.get-pr-number.outputs.pr_number != ''
         uses: actions/github-script@v6
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -444,7 +465,7 @@ jobs:
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: 'Claude Cascade - Three-Phase Workflow',
+              name: 'Claude Cascade - Three-Phase Workflow (Fallback)',
               head_sha: '${{ steps.fetch-pr-branch.outputs.head_sha }}',
               status: 'completed',
               conclusion: mergeReady ? 'success' : 'failure',
@@ -461,7 +482,7 @@ jobs:
             await github.rest.checks.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              name: 'Claude Cascade - Phase 1 Plans',
+              name: 'Claude Cascade - Phase 1 Plans (Fallback)',
               head_sha: '${{ steps.fetch-pr-branch.outputs.head_sha }}',
               status: 'completed',
               conclusion: phase1Exists ? 'success' : 'failure',
@@ -473,41 +494,7 @@ jobs:
               }
             });
             
-            // Phase 2 check
-            const phase2Complete = '${{ steps.check-phase2.outputs.phase2_complete }}' === 'true';
-            await github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: 'Claude Cascade - Phase 2 Executions',
-              head_sha: '${{ steps.fetch-pr-branch.outputs.head_sha }}',
-              status: 'completed',
-              conclusion: phase2Complete ? 'success' : 'failure',
-              output: {
-                title: phase2Complete ? 'Phase 2 Execution Records Complete' : 'Incomplete Phase 2 Records',
-                summary: phase2Complete 
-                  ? 'All Phase 1 plans have matching Phase 2 execution records.'
-                  : 'Not all Phase 1 plans have matching Phase 2 execution records.'
-              }
-            });
-            
-            // Phase 3 check
-            const phase3Complete = '${{ steps.check-phase3.outputs.phase3_complete }}' === 'true';
-            await github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: 'Claude Cascade - Phase 3 Verifications',
-              head_sha: '${{ steps.fetch-pr-branch.outputs.head_sha }}',
-              status: 'completed',
-              conclusion: phase3Complete ? 'success' : 'failure',
-              output: {
-                title: phase3Complete ? 'Phase 3 Verifications Complete' : 'Incomplete Phase 3 Verifications',
-                summary: phase3Complete 
-                  ? 'All Phase 2 execution records have matching Phase 3 verifications.'
-                  : 'Not all Phase 2 execution records have matching Phase 3 verifications.'
-              }
-            });
-            
-            // Update PR with merge readiness status
+            // Update PR with merge readiness status based on fallback validation
             await github.rest.issues.createLabel({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -519,30 +506,8 @@ jobs:
               console.log('Note: Label may already exist');
             });
             
-            // Remove opposite label if it exists
-            const labelsToRemove = mergeReady ? ['cascade:incomplete'] : ['cascade:ready-to-merge'];
-            
+            // Add the appropriate label
             try {
-              const issue = await github.rest.issues.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: ${{ steps.get-pr-number.outputs.pr_number }}
-              });
-              
-              const currentLabels = issue.data.labels.map(label => label.name);
-              
-              for (const labelToRemove of labelsToRemove) {
-                if (currentLabels.includes(labelToRemove)) {
-                  await github.rest.issues.removeLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: ${{ steps.get-pr-number.outputs.pr_number }},
-                    name: labelToRemove
-                  });
-                }
-              }
-              
-              // Add the appropriate label
               await github.rest.issues.addLabels({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -550,5 +515,5 @@ jobs:
                 labels: [mergeReady ? 'cascade:ready-to-merge' : 'cascade:incomplete']
               });
             } catch (error) {
-              console.log('Error updating labels:', error);
+              console.log('Error adding labels:', error);
             }
