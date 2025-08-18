@@ -1,0 +1,554 @@
+name: 'PR Merge Guardian'
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  pull_request_target:
+    types: [labeled]
+  check_suite:
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Pull request number to check'
+        required: true
+        type: number
+      force_validate:
+        description: 'Force validation regardless of status'
+        type: boolean
+        default: false
+
+jobs:
+  validate-three-phase-workflow:
+    name: 'Validate Three-Phase Workflow Completion'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      statuses: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Get PR number
+        id: get-pr-number
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            PR_NUMBER="${{ github.event.inputs.pr_number }}"
+          elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "pull_request_target" ]]; then
+            PR_NUMBER="${{ github.event.pull_request.number }}"
+          elif [[ "${{ github.event_name }}" == "check_suite" ]]; then
+            # Get PR associated with this check suite if possible
+            PR_INFO=$(curl -s \
+              -H "Accept: application/vnd.github.v3+json" \
+              -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "${{ github.api_url }}/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls")
+            
+            PR_NUMBER=$(echo "$PR_INFO" | jq -r '.[0].number' || echo "")
+          fi
+          
+          if [[ -z "$PR_NUMBER" || "$PR_NUMBER" == "null" ]]; then
+            echo "Could not determine PR number. Exiting."
+            exit 1
+          fi
+          
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          
+      - name: Fetch PR branch files
+        id: fetch-pr-branch
+        run: |
+          PR_NUMBER="${{ steps.get-pr-number.outputs.pr_number }}"
+          
+          # Get PR info
+          PR_INFO=$(curl -s \
+            -H "Accept: application/vnd.github.v3+json" \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/pulls/$PR_NUMBER")
+          
+          HEAD_SHA=$(echo "$PR_INFO" | jq -r '.head.sha')
+          HEAD_REF=$(echo "$PR_INFO" | jq -r '.head.ref')
+          BASE_REF=$(echo "$PR_INFO" | jq -r '.base.ref')
+          
+          echo "head_sha=$HEAD_SHA" >> $GITHUB_OUTPUT
+          echo "head_ref=$HEAD_REF" >> $GITHUB_OUTPUT
+          echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+          
+          # Fetch PR branch
+          git fetch origin $HEAD_REF
+          git checkout $HEAD_SHA
+          
+      - name: Check for Phase 1 plans
+        id: check-phase1
+        run: |
+          PLANS_DIR=".claude/plans/1_pre_exec_plans"
+          
+          if [[ ! -d "$PLANS_DIR" ]]; then
+            echo "phase1_exists=false" >> $GITHUB_OUTPUT
+            echo "phase1_count=0" >> $GITHUB_OUTPUT
+            echo "::error::No Phase 1 plans directory found"
+            exit 0
+          fi
+          
+          # Count Phase 1 plans
+          PHASE1_COUNT=$(find "$PLANS_DIR" -name "*.md" -type f -not -name "README.md" | wc -l)
+          echo "phase1_count=$PHASE1_COUNT" >> $GITHUB_OUTPUT
+          
+          if [[ $PHASE1_COUNT -gt 0 ]]; then
+            echo "phase1_exists=true" >> $GITHUB_OUTPUT
+            
+            # Get plan names
+            PLANS_LIST=$(find "$PLANS_DIR" -name "*.md" -type f -not -name "README.md" -printf '%f\n')
+            PLAN_NAMES=""
+            
+            while read -r plan; do
+              if [[ "$plan" =~ ^([0-9]{8})_([0-9]{6})_(.*)\.md$ ]]; then
+                NAME="${BASH_REMATCH[3]}"
+                if [[ -z "$PLAN_NAMES" ]]; then
+                  PLAN_NAMES="$NAME"
+                else
+                  PLAN_NAMES="$PLAN_NAMES,$NAME"
+                fi
+              fi
+            done <<< "$PLANS_LIST"
+            
+            echo "plan_names=$PLAN_NAMES" >> $GITHUB_OUTPUT
+          else
+            echo "phase1_exists=false" >> $GITHUB_OUTPUT
+            echo "::error::No Phase 1 plans found"
+          fi
+          
+      - name: Check for Phase 2 execution records
+        id: check-phase2
+        if: steps.check-phase1.outputs.phase1_exists == 'true'
+        run: |
+          PHASE1_DIR=".claude/plans/1_pre_exec_plans"
+          PHASE2_DIR=".claude/plans/2_post_exec_plans"
+          
+          if [[ ! -d "$PHASE2_DIR" ]]; then
+            echo "phase2_exists=false" >> $GITHUB_OUTPUT
+            echo "phase2_count=0" >> $GITHUB_OUTPUT
+            echo "complete_phase2_count=0" >> $GITHUB_OUTPUT
+            echo "::error::No Phase 2 execution records directory found"
+            exit 0
+          fi
+          
+          # Count all Phase 2 records
+          PHASE2_COUNT=$(find "$PHASE2_DIR" -name "*_EXECUTED.md" -type f | wc -l)
+          echo "phase2_count=$PHASE2_COUNT" >> $GITHUB_OUTPUT
+          
+          # Check for matching Phase 2 records
+          IFS=',' read -ra PLAN_NAMES <<< "${{ steps.check-phase1.outputs.plan_names }}"
+          COMPLETE_COUNT=0
+          COMPLETE_PLANS=""
+          INCOMPLETE_PLANS=""
+          
+          for name in "${PLAN_NAMES[@]}"; do
+            MATCHING_PHASE2=$(find "$PHASE2_DIR" -name "*${name}*_EXECUTED.md" -type f | wc -l)
+            
+            if [[ $MATCHING_PHASE2 -gt 0 ]]; then
+              COMPLETE_COUNT=$((COMPLETE_COUNT + 1))
+              if [[ -z "$COMPLETE_PLANS" ]]; then
+                COMPLETE_PLANS="$name"
+              else
+                COMPLETE_PLANS="$COMPLETE_PLANS,$name"
+              fi
+            else
+              if [[ -z "$INCOMPLETE_PLANS" ]]; then
+                INCOMPLETE_PLANS="$name"
+              else
+                INCOMPLETE_PLANS="$INCOMPLETE_PLANS,$name"
+              fi
+            fi
+          done
+          
+          echo "complete_phase2_count=$COMPLETE_COUNT" >> $GITHUB_OUTPUT
+          echo "complete_phase2_plans=$COMPLETE_PLANS" >> $GITHUB_OUTPUT
+          echo "incomplete_phase2_plans=$INCOMPLETE_PLANS" >> $GITHUB_OUTPUT
+          
+          PHASE1_COUNT="${{ steps.check-phase1.outputs.phase1_count }}"
+          
+          if [[ $COMPLETE_COUNT -eq $PHASE1_COUNT ]]; then
+            echo "phase2_complete=true" >> $GITHUB_OUTPUT
+          else
+            echo "phase2_complete=false" >> $GITHUB_OUTPUT
+            echo "::error::Not all Phase 1 plans have matching Phase 2 execution records"
+          fi
+          
+          if [[ $PHASE2_COUNT -gt 0 ]]; then
+            echo "phase2_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "phase2_exists=false" >> $GITHUB_OUTPUT
+            echo "::error::No Phase 2 execution records found"
+          fi
+          
+      - name: Check for Phase 3 verifications
+        id: check-phase3
+        if: steps.check-phase2.outputs.phase2_exists == 'true'
+        run: |
+          PHASE3_DIR=".claude/plans/3_checked_delta_exec_plans"
+          
+          if [[ ! -d "$PHASE3_DIR" ]]; then
+            echo "phase3_exists=false" >> $GITHUB_OUTPUT
+            echo "phase3_count=0" >> $GITHUB_OUTPUT
+            echo "complete_phase3_count=0" >> $GITHUB_OUTPUT
+            echo "::error::No Phase 3 verification directory found"
+            exit 0
+          fi
+          
+          # Count all Phase 3 verifications
+          PHASE3_COUNT=$(find "$PHASE3_DIR" -name "*_VERIFICATION.md" -type f | wc -l)
+          echo "phase3_count=$PHASE3_COUNT" >> $GITHUB_OUTPUT
+          
+          # Check for matching Phase 3 records only for plans with Phase 2 records
+          if [[ -n "${{ steps.check-phase2.outputs.complete_phase2_plans }}" ]]; then
+            IFS=',' read -ra COMPLETE_PHASE2_PLANS <<< "${{ steps.check-phase2.outputs.complete_phase2_plans }}"
+            COMPLETE_COUNT=0
+            COMPLETE_PLANS=""
+            INCOMPLETE_PLANS=""
+            
+            for name in "${COMPLETE_PHASE2_PLANS[@]}"; do
+              MATCHING_PHASE3=$(find "$PHASE3_DIR" -name "*${name}*_VERIFICATION.md" -type f | wc -l)
+              
+              if [[ $MATCHING_PHASE3 -gt 0 ]]; then
+                COMPLETE_COUNT=$((COMPLETE_COUNT + 1))
+                if [[ -z "$COMPLETE_PLANS" ]]; then
+                  COMPLETE_PLANS="$name"
+                else
+                  COMPLETE_PLANS="$COMPLETE_PLANS,$name"
+                fi
+              else
+                if [[ -z "$INCOMPLETE_PLANS" ]]; then
+                  INCOMPLETE_PLANS="$name"
+                else
+                  INCOMPLETE_PLANS="$INCOMPLETE_PLANS,$name"
+                fi
+              fi
+            done
+            
+            echo "complete_phase3_count=$COMPLETE_COUNT" >> $GITHUB_OUTPUT
+            echo "complete_phase3_plans=$COMPLETE_PLANS" >> $GITHUB_OUTPUT
+            echo "incomplete_phase3_plans=$INCOMPLETE_PLANS" >> $GITHUB_OUTPUT
+            
+            COMPLETE_PHASE2_COUNT="${{ steps.check-phase2.outputs.complete_phase2_count }}"
+            
+            if [[ $COMPLETE_COUNT -eq $COMPLETE_PHASE2_COUNT ]]; then
+              echo "phase3_complete=true" >> $GITHUB_OUTPUT
+            else
+              echo "phase3_complete=false" >> $GITHUB_OUTPUT
+              echo "::error::Not all Phase 2 executions have matching Phase 3 verifications"
+            fi
+          else
+            echo "complete_phase3_count=0" >> $GITHUB_OUTPUT
+            echo "phase3_complete=false" >> $GITHUB_OUTPUT
+          fi
+          
+          if [[ $PHASE3_COUNT -gt 0 ]]; then
+            echo "phase3_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "phase3_exists=false" >> $GITHUB_OUTPUT
+            echo "::error::No Phase 3 verifications found"
+          fi
+          
+      - name: Generate compliance report
+        id: compliance-report
+        run: |
+          PR_NUMBER="${{ steps.get-pr-number.outputs.pr_number }}"
+          HEAD_SHA="${{ steps.fetch-pr-branch.outputs.head_sha }}"
+          HEAD_REF="${{ steps.fetch-pr-branch.outputs.head_ref }}"
+          BASE_REF="${{ steps.fetch-pr-branch.outputs.base_ref }}"
+          
+          # Initialize counts
+          PHASE1_COUNT="${{ steps.check-phase1.outputs.phase1_count }}"
+          PHASE1_COUNT=${PHASE1_COUNT:-0}
+          
+          PHASE2_COUNT="${{ steps.check-phase2.outputs.complete_phase2_count }}"
+          PHASE2_COUNT=${PHASE2_COUNT:-0}
+          
+          PHASE3_COUNT="${{ steps.check-phase3.outputs.complete_phase3_count }}"
+          PHASE3_COUNT=${PHASE3_COUNT:-0}
+          
+          # Calculate completion percentage
+          if [[ $PHASE1_COUNT -eq 0 ]]; then
+            COMPLETION=0
+          else
+            TOTAL_PHASES=$((PHASE1_COUNT * 3))
+            COMPLETED_PHASES=$((PHASE1_COUNT + PHASE2_COUNT + PHASE3_COUNT))
+            COMPLETION=$((COMPLETED_PHASES * 100 / TOTAL_PHASES))
+          fi
+          
+          echo "completion_percentage=$COMPLETION" >> $GITHUB_OUTPUT
+          
+          # Check merge readiness
+          if [[ "${{ steps.check-phase1.outputs.phase1_exists }}" != "true" ]]; then
+            echo "merge_ready=false" >> $GITHUB_OUTPUT
+            MERGE_STATUS="❌ Not Ready to Merge - Missing Phase 1 plans"
+          elif [[ "${{ steps.check-phase2.outputs.phase2_complete }}" != "true" ]]; then
+            echo "merge_ready=false" >> $GITHUB_OUTPUT
+            MERGE_STATUS="❌ Not Ready to Merge - Incomplete Phase 2 execution records"
+          elif [[ "${{ steps.check-phase3.outputs.phase3_complete }}" != "true" ]]; then
+            echo "merge_ready=false" >> $GITHUB_OUTPUT
+            MERGE_STATUS="❌ Not Ready to Merge - Incomplete Phase 3 verifications"
+          elif [[ $COMPLETION -lt 100 ]]; then
+            echo "merge_ready=false" >> $GITHUB_OUTPUT
+            MERGE_STATUS="❌ Not Ready to Merge - Three-phase workflow incomplete ($COMPLETION%)"
+          else
+            echo "merge_ready=true" >> $GITHUB_OUTPUT
+            MERGE_STATUS="✅ Ready to Merge - Three-phase workflow complete"
+          fi
+          
+          # Generate the report
+          echo "## Claude Cascade Workflow Status" > compliance_report.md
+          echo "" >> compliance_report.md
+          echo "**Pull Request**: #$PR_NUMBER ($HEAD_REF → $BASE_REF)" >> compliance_report.md
+          echo "**Status**: $MERGE_STATUS" >> compliance_report.md
+          echo "**Workflow Completion**: $COMPLETION%" >> compliance_report.md
+          echo "" >> compliance_report.md
+          
+          # Phase 1 status
+          echo "### Phase 1: Pre-Execution Plans" >> compliance_report.md
+          echo "" >> compliance_report.md
+          
+          if [[ "${{ steps.check-phase1.outputs.phase1_exists }}" == "true" ]]; then
+            echo "✅ **$PHASE1_COUNT** plan(s) found" >> compliance_report.md
+            
+            # List plans
+            if [[ -n "${{ steps.check-phase1.outputs.plan_names }}" ]]; then
+              echo "" >> compliance_report.md
+              echo "**Plans**:" >> compliance_report.md
+              
+              IFS=',' read -ra PLAN_NAMES <<< "${{ steps.check-phase1.outputs.plan_names }}"
+              for name in "${PLAN_NAMES[@]}"; do
+                echo "- $name" >> compliance_report.md
+              done
+            fi
+          else
+            echo "❌ No Phase 1 plans found" >> compliance_report.md
+            echo "" >> compliance_report.md
+            echo "**Action Required**: Create at least one plan in \`.claude/plans/1_pre_exec_plans/\`" >> compliance_report.md
+          fi
+          
+          # Phase 2 status
+          echo "" >> compliance_report.md
+          echo "### Phase 2: Post-Execution Records" >> compliance_report.md
+          echo "" >> compliance_report.md
+          
+          if [[ "${{ steps.check-phase2.outputs.phase2_exists }}" == "true" ]]; then
+            if [[ "${{ steps.check-phase2.outputs.phase2_complete }}" == "true" ]]; then
+              echo "✅ **$PHASE2_COUNT/$PHASE1_COUNT** execution records complete" >> compliance_report.md
+            else
+              echo "⚠️ **$PHASE2_COUNT/$PHASE1_COUNT** execution records complete" >> compliance_report.md
+              
+              # List incomplete plans
+              if [[ -n "${{ steps.check-phase2.outputs.incomplete_phase2_plans }}" ]]; then
+                echo "" >> compliance_report.md
+                echo "**Missing Execution Records For**:" >> compliance_report.md
+                
+                IFS=',' read -ra INCOMPLETE_PLANS <<< "${{ steps.check-phase2.outputs.incomplete_phase2_plans }}"
+                for name in "${INCOMPLETE_PLANS[@]}"; do
+                  echo "- $name" >> compliance_report.md
+                done
+                
+                echo "" >> compliance_report.md
+                echo "**Action Required**: Create execution records in \`.claude/plans/2_post_exec_plans/\` with suffix \`_EXECUTED.md\`" >> compliance_report.md
+              fi
+            fi
+          else
+            echo "❌ No Phase 2 execution records found" >> compliance_report.md
+            echo "" >> compliance_report.md
+            echo "**Action Required**: Create execution records in \`.claude/plans/2_post_exec_plans/\` with suffix \`_EXECUTED.md\`" >> compliance_report.md
+          fi
+          
+          # Phase 3 status
+          echo "" >> compliance_report.md
+          echo "### Phase 3: Delta Verifications" >> compliance_report.md
+          echo "" >> compliance_report.md
+          
+          if [[ "${{ steps.check-phase3.outputs.phase3_exists }}" == "true" ]]; then
+            if [[ "${{ steps.check-phase3.outputs.phase3_complete }}" == "true" ]]; then
+              echo "✅ **$PHASE3_COUNT/$PHASE2_COUNT** verifications complete" >> compliance_report.md
+            else
+              echo "⚠️ **$PHASE3_COUNT/$PHASE2_COUNT** verifications complete" >> compliance_report.md
+              
+              # List incomplete verifications
+              if [[ -n "${{ steps.check-phase3.outputs.incomplete_phase3_plans }}" ]]; then
+                echo "" >> compliance_report.md
+                echo "**Missing Verifications For**:" >> compliance_report.md
+                
+                IFS=',' read -ra INCOMPLETE_PLANS <<< "${{ steps.check-phase3.outputs.incomplete_phase3_plans }}"
+                for name in "${INCOMPLETE_PLANS[@]}"; do
+                  echo "- $name" >> compliance_report.md
+                done
+                
+                echo "" >> compliance_report.md
+                echo "**Action Required**: Create verifications in \`.claude/plans/3_checked_delta_exec_plans/\` with suffix \`_VERIFICATION.md\`" >> compliance_report.md
+              fi
+            fi
+          else
+            echo "❌ No Phase 3 verifications found" >> compliance_report.md
+            echo "" >> compliance_report.md
+            echo "**Action Required**: Create verifications in \`.claude/plans/3_checked_delta_exec_plans/\` with suffix \`_VERIFICATION.md\`" >> compliance_report.md
+          fi
+          
+          # Next steps
+          echo "" >> compliance_report.md
+          echo "### Next Steps" >> compliance_report.md
+          echo "" >> compliance_report.md
+          
+          if [[ "${{ steps.check-phase1.outputs.phase1_exists }}" != "true" ]]; then
+            echo "1. Create Phase 1 plan(s) in \`.claude/plans/1_pre_exec_plans/\`" >> compliance_report.md
+          elif [[ "${{ steps.check-phase2.outputs.phase2_complete }}" != "true" ]]; then
+            echo "1. Create missing Phase 2 execution records in \`.claude/plans/2_post_exec_plans/\`" >> compliance_report.md
+          elif [[ "${{ steps.check-phase3.outputs.phase3_complete }}" != "true" ]]; then
+            echo "1. Create missing Phase 3 verifications in \`.claude/plans/3_checked_delta_exec_plans/\`" >> compliance_report.md
+          else
+            echo "1. All phases complete - PR is ready to merge! 🎉" >> compliance_report.md
+          fi
+          
+          cat compliance_report.md
+          
+      - name: Comment on PR with compliance report
+        if: steps.get-pr-number.outputs.pr_number != ''
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('compliance_report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: ${{ steps.get-pr-number.outputs.pr_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+            
+      - name: Set PR status check
+        if: steps.get-pr-number.outputs.pr_number != ''
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const percentage = ${{ steps.compliance-report.outputs.completion_percentage }};
+            const mergeReady = '${{ steps.compliance-report.outputs.merge_ready }}' === 'true';
+            
+            // Overall workflow check
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Three-Phase Workflow',
+              head_sha: '${{ steps.fetch-pr-branch.outputs.head_sha }}',
+              status: 'completed',
+              conclusion: mergeReady ? 'success' : 'failure',
+              output: {
+                title: mergeReady ? 'Three-Phase Workflow Complete' : `Workflow ${percentage}% Complete`,
+                summary: mergeReady 
+                  ? 'All three phases (Plan, Execute, Verify) are complete. Ready to merge.'
+                  : `Three-phase workflow is ${percentage}% complete. Additional documentation required.`
+              }
+            });
+            
+            // Phase 1 check
+            const phase1Exists = '${{ steps.check-phase1.outputs.phase1_exists }}' === 'true';
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 1 Plans',
+              head_sha: '${{ steps.fetch-pr-branch.outputs.head_sha }}',
+              status: 'completed',
+              conclusion: phase1Exists ? 'success' : 'failure',
+              output: {
+                title: phase1Exists ? 'Phase 1 Plans Exist' : 'Missing Phase 1 Plans',
+                summary: phase1Exists 
+                  ? 'Pre-execution plans found in the PR.'
+                  : 'No pre-execution plans found. Create plans in `.claude/plans/1_pre_exec_plans/`.'
+              }
+            });
+            
+            // Phase 2 check
+            const phase2Complete = '${{ steps.check-phase2.outputs.phase2_complete }}' === 'true';
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 2 Executions',
+              head_sha: '${{ steps.fetch-pr-branch.outputs.head_sha }}',
+              status: 'completed',
+              conclusion: phase2Complete ? 'success' : 'failure',
+              output: {
+                title: phase2Complete ? 'Phase 2 Execution Records Complete' : 'Incomplete Phase 2 Records',
+                summary: phase2Complete 
+                  ? 'All Phase 1 plans have matching Phase 2 execution records.'
+                  : 'Not all Phase 1 plans have matching Phase 2 execution records.'
+              }
+            });
+            
+            // Phase 3 check
+            const phase3Complete = '${{ steps.check-phase3.outputs.phase3_complete }}' === 'true';
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 3 Verifications',
+              head_sha: '${{ steps.fetch-pr-branch.outputs.head_sha }}',
+              status: 'completed',
+              conclusion: phase3Complete ? 'success' : 'failure',
+              output: {
+                title: phase3Complete ? 'Phase 3 Verifications Complete' : 'Incomplete Phase 3 Verifications',
+                summary: phase3Complete 
+                  ? 'All Phase 2 execution records have matching Phase 3 verifications.'
+                  : 'Not all Phase 2 execution records have matching Phase 3 verifications.'
+              }
+            });
+            
+            // Update PR with merge readiness status
+            await github.rest.issues.createLabel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: mergeReady ? 'cascade:ready-to-merge' : 'cascade:incomplete',
+              color: mergeReady ? '0E8A16' : 'D93F0B',
+              description: mergeReady ? 'Three-phase workflow complete' : 'Incomplete three-phase workflow'
+            }).catch(error => {
+              // Label might already exist, which is fine
+              console.log('Note: Label may already exist');
+            });
+            
+            // Remove opposite label if it exists
+            const labelsToRemove = mergeReady ? ['cascade:incomplete'] : ['cascade:ready-to-merge'];
+            
+            try {
+              const issue = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: ${{ steps.get-pr-number.outputs.pr_number }}
+              });
+              
+              const currentLabels = issue.data.labels.map(label => label.name);
+              
+              for (const labelToRemove of labelsToRemove) {
+                if (currentLabels.includes(labelToRemove)) {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: ${{ steps.get-pr-number.outputs.pr_number }},
+                    name: labelToRemove
+                  });
+                }
+              }
+              
+              // Add the appropriate label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: ${{ steps.get-pr-number.outputs.pr_number }},
+                labels: [mergeReady ? 'cascade:ready-to-merge' : 'cascade:incomplete']
+              });
+            } catch (error) {
+              console.log('Error updating labels:', error);
+            }

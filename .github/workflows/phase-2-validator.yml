@@ -1,0 +1,316 @@
+name: 'Phase 2 Execution Validation'
+
+on:
+  pull_request:
+    paths:
+      - '.claude/plans/2_post_exec_plans/**'
+  push:
+    paths:
+      - '.claude/plans/2_post_exec_plans/**'
+  workflow_dispatch:
+    inputs:
+      execution_file:
+        description: 'Phase 2 execution file to validate'
+        required: false
+        type: string
+
+jobs:
+  validate-phase2-execution:
+    name: 'Validate Post-Execution Record'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Identify execution file
+        id: identify-execution
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.execution_file }}" ]]; then
+            # Use the file provided in workflow dispatch
+            EXEC_FILE="${{ github.event.inputs.execution_file }}"
+          elif [[ "${{ github.event_name }}" == "pull_request" || "${{ github.event_name }}" == "push" ]]; then
+            # Get changed files in this push or PR
+            if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+              git fetch origin ${{ github.event.pull_request.base.ref }}
+              CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} ${{ github.sha }} | grep -E "^\.claude/plans/2_post_exec_plans/.*_EXECUTED\.md$" || echo "")
+            else
+              CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E "^\.claude/plans/2_post_exec_plans/.*_EXECUTED\.md$" || echo "")
+            fi
+            
+            if [[ -n "$CHANGED_FILES" ]]; then
+              # Take the most recently modified file
+              EXEC_FILE=$(echo "$CHANGED_FILES" | head -1)
+            else
+              # Fallback to the latest execution file
+              EXEC_FILE=$(find .claude/plans/2_post_exec_plans -name "*_EXECUTED.md" -type f -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}' || echo "")
+            fi
+          else
+            # Fallback to the latest execution file
+            EXEC_FILE=$(find .claude/plans/2_post_exec_plans -name "*_EXECUTED.md" -type f -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}' || echo "")
+          fi
+          
+          if [[ -z "$EXEC_FILE" || ! -f "$EXEC_FILE" ]]; then
+            echo "No valid Phase 2 execution file found!"
+            exit 1
+          fi
+          
+          echo "execution_file=$EXEC_FILE" >> $GITHUB_OUTPUT
+          echo "execution_basename=$(basename "$EXEC_FILE")" >> $GITHUB_OUTPUT
+          
+          # Extract plan name to find matching Phase 1 plan
+          FILENAME=$(basename "$EXEC_FILE")
+          if [[ "$FILENAME" =~ ^([0-9]{8})_([0-9]{6})_(.*)_EXECUTED\.md$ ]]; then
+            DATE="${BASH_REMATCH[1]}"
+            TIME="${BASH_REMATCH[2]}"
+            NAME="${BASH_REMATCH[3]}"
+            
+            echo "plan_date=$DATE" >> $GITHUB_OUTPUT
+            echo "plan_time=$TIME" >> $GITHUB_OUTPUT
+            echo "plan_name=$NAME" >> $GITHUB_OUTPUT
+            
+            # Look for matching Phase 1 plan
+            PHASE1_DIR=".claude/plans/1_pre_exec_plans"
+            MATCHING_PHASE1=$(find "$PHASE1_DIR" -name "*${NAME}.md" -type f | head -1 || echo "")
+            
+            if [[ -n "$MATCHING_PHASE1" && -f "$MATCHING_PHASE1" ]]; then
+              echo "matching_phase1=$MATCHING_PHASE1" >> $GITHUB_OUTPUT
+              echo "has_matching_phase1=true" >> $GITHUB_OUTPUT
+            else
+              echo "has_matching_phase1=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "::warning::Execution filename does not follow the convention: YYYYMMDD_HHMMSS_NAME_EXECUTED.md"
+            echo "has_matching_phase1=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Validate execution structure
+        id: validate-structure
+        run: |
+          EXEC_FILE="${{ steps.identify-execution.outputs.execution_file }}"
+          
+          echo "Validating execution structure for: $EXEC_FILE"
+          
+          # Check if file exists
+          if [[ ! -f "$EXEC_FILE" ]]; then
+            echo "Error: Execution file does not exist: $EXEC_FILE"
+            exit 1
+          fi
+          
+          # Required sections to check for
+          declare -a REQUIRED_SECTIONS=("What Was Executed" "Results Achieved" "Deviations from Plan")
+          MISSING_SECTIONS=""
+          
+          # Check for each required section
+          for section in "${REQUIRED_SECTIONS[@]}"; do
+            if ! grep -q "^## $section" "$EXEC_FILE"; then
+              if [[ -z "$MISSING_SECTIONS" ]]; then
+                MISSING_SECTIONS="$section"
+              else
+                MISSING_SECTIONS="$MISSING_SECTIONS, $section"
+              fi
+            fi
+          done
+          
+          if [[ -n "$MISSING_SECTIONS" ]]; then
+            echo "::error::Missing required sections in execution record: $MISSING_SECTIONS"
+            echo "missing_sections=$MISSING_SECTIONS" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Check execution content length
+          MIN_CONTENT_LENGTH=300
+          CONTENT_LENGTH=$(wc -c < "$EXEC_FILE")
+          
+          if [[ $CONTENT_LENGTH -lt $MIN_CONTENT_LENGTH ]]; then
+            echo "::warning::Execution record is unusually short ($CONTENT_LENGTH chars). Consider adding more detail."
+          fi
+          
+          # Check for commit references in the execution record
+          if ! grep -q -E "(commit|[0-9a-f]{7,40})" "$EXEC_FILE"; then
+            echo "::warning::No commit references found. Consider linking to specific commits that implemented this plan."
+          fi
+          
+          # Check for specific execution steps
+          EXECUTED_SECTION=$(sed -n '/^## What Was Executed/,/^##/p' "$EXEC_FILE" | head -n -1)
+          if ! echo "$EXECUTED_SECTION" | grep -q -E "^[0-9]+\. |^- "; then
+            echo "::warning::No structured execution steps found. Consider adding numbered steps or bullet points."
+          fi
+          
+          echo "Structure validation passed!"
+          echo "structure_valid=true" >> $GITHUB_OUTPUT
+          
+      - name: Check for original plan vs actual execution
+        id: check-plan-vs-execution
+        if: steps.identify-execution.outputs.has_matching_phase1 == 'true'
+        run: |
+          PHASE1_FILE="${{ steps.identify-execution.outputs.matching_phase1 }}"
+          EXEC_FILE="${{ steps.identify-execution.outputs.execution_file }}"
+          
+          echo "Comparing Phase 1 plan to Phase 2 execution record..."
+          
+          # Extract detailed steps from Phase 1 plan
+          PHASE1_STEPS=$(sed -n '/^## Detailed Steps/,/^##/p' "$PHASE1_FILE" | tail -n +2 | head -n -1)
+          
+          # Extract what was executed from Phase 2 record
+          PHASE2_EXECUTED=$(sed -n '/^## What Was Executed/,/^##/p' "$EXEC_FILE" | tail -n +2 | head -n -1)
+          
+          # Check for deviations section content
+          DEVIATIONS=$(sed -n '/^## Deviations from Plan/,/^##/p' "$EXEC_FILE" | tail -n +2 | head -n -1 || echo "")
+          DEVIATION_LENGTH=${#DEVIATIONS}
+          
+          if [[ $DEVIATION_LENGTH -lt 10 && "$PHASE1_STEPS" != "$PHASE2_EXECUTED" ]]; then
+            echo "::warning::Execution differs from plan, but deviations section is minimal or empty. Consider documenting differences."
+          fi
+          
+          # Extract results section
+          RESULTS=$(sed -n '/^## Results Achieved/,/^##/p' "$EXEC_FILE" | tail -n +2 | head -n -1)
+          RESULTS_LENGTH=${#RESULTS}
+          
+          if [[ $RESULTS_LENGTH -lt 100 ]]; then
+            echo "::warning::Results section is brief. Consider adding more detail about outcomes."
+            echo "results_brief=true" >> $GITHUB_OUTPUT
+          else
+            echo "results_brief=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "Comparison complete."
+          echo "comparison_complete=true" >> $GITHUB_OUTPUT
+          
+      - name: Extract execution metadata
+        id: extract-metadata
+        run: |
+          EXEC_FILE="${{ steps.identify-execution.outputs.execution_file }}"
+          
+          # Extract execution title (first heading)
+          TITLE=$(head -n 1 "$EXEC_FILE" | sed 's/^# *//')
+          echo "execution_title=$TITLE" >> $GITHUB_OUTPUT
+          
+          # Extract what was executed summary
+          EXECUTED_SUMMARY=$(sed -n '/^## What Was Executed/,/^##/p' "$EXEC_FILE" | tail -n +2 | head -n -1 | tr '\n' ' ' | sed 's/^ *//' | sed 's/ *$//' | cut -c 1-200)
+          echo "executed_summary=$EXECUTED_SUMMARY..." >> $GITHUB_OUTPUT
+          
+      - name: Generate validation report
+        id: validation-report
+        run: |
+          EXEC_FILE="${{ steps.identify-execution.outputs.execution_file }}"
+          EXEC_BASENAME="${{ steps.identify-execution.outputs.execution_basename }}"
+          
+          echo "## Phase 2 Execution Record Validation" > validation_report.md
+          echo "" >> validation_report.md
+          echo "**Execution Record**: [\`$EXEC_BASENAME\`](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/$EXEC_FILE)" >> validation_report.md
+          echo "" >> validation_report.md
+          
+          if [[ -n "${{ steps.extract-metadata.outputs.execution_title }}" ]]; then
+            echo "**Title**: ${{ steps.extract-metadata.outputs.execution_title }}" >> validation_report.md
+          fi
+          
+          if [[ "${{ steps.identify-execution.outputs.has_matching_phase1 }}" == "true" ]]; then
+            PHASE1_BASENAME=$(basename "${{ steps.identify-execution.outputs.matching_phase1 }}")
+            echo "**Original Plan**: [\`$PHASE1_BASENAME\`](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/${{ steps.identify-execution.outputs.matching_phase1 }})" >> validation_report.md
+          else
+            echo "**Warning**: No matching Phase 1 plan found" >> validation_report.md
+          fi
+          
+          echo "" >> validation_report.md
+          echo "### Validation Results" >> validation_report.md
+          echo "" >> validation_report.md
+          
+          if [[ "${{ steps.validate-structure.outputs.structure_valid }}" == "true" ]]; then
+            echo "✅ **Structure**: Execution record structure is valid" >> validation_report.md
+          else
+            echo "❌ **Structure**: Execution record structure is invalid" >> validation_report.md
+            
+            if [[ -n "${{ steps.validate-structure.outputs.missing_sections }}" ]]; then
+              echo "  - Missing required sections: ${{ steps.validate-structure.outputs.missing_sections }}" >> validation_report.md
+            fi
+          fi
+          
+          if [[ "${{ steps.identify-execution.outputs.has_matching_phase1 }}" == "true" ]]; then
+            echo "✅ **Plan Reference**: Matching Phase 1 plan found" >> validation_report.md
+          else
+            echo "❌ **Plan Reference**: No matching Phase 1 plan found" >> validation_report.md
+          fi
+          
+          # Check for result documentation
+          if [[ "${{ steps.check-plan-vs-execution.outputs.results_brief }}" == "true" ]]; then
+            echo "⚠️ **Results**: Results documentation is brief. Consider adding more details." >> validation_report.md
+          else
+            echo "✅ **Results**: Detailed results documentation found" >> validation_report.md
+          fi
+          
+          echo "" >> validation_report.md
+          echo "### Next Steps" >> validation_report.md
+          echo "" >> validation_report.md
+          echo "1. **Verify** the results with comprehensive tests" >> validation_report.md
+          echo "2. Create a Phase 3 verification file in \`.claude/plans/3_checked_delta_exec_plans/\` with suffix \`_VERIFICATION.md\`" >> validation_report.md
+          echo "3. Ensure verification includes actual test results and validates against success criteria" >> validation_report.md
+          
+          cat validation_report.md
+          
+      - name: Comment on PR with validation results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('validation_report.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+            
+      - name: Set PR status check
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const isValid = '${{ steps.validate-structure.outputs.structure_valid }}' === 'true';
+            const hasMatchingPlan = '${{ steps.identify-execution.outputs.has_matching_phase1 }}' === 'true';
+            
+            // Structure validation check
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 2 Structure',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: isValid ? 'success' : 'failure',
+              output: {
+                title: isValid ? 'Phase 2 Execution Record Structure Valid' : 'Phase 2 Execution Record Structure Invalid',
+                summary: isValid 
+                  ? 'The execution record meets all structural requirements.'
+                  : 'The execution record is missing required sections or has structural issues.'
+              }
+            });
+            
+            // Plan reference check
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 2 Plan Reference',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: hasMatchingPlan ? 'success' : 'failure',
+              output: {
+                title: hasMatchingPlan ? 'Phase 2 References Phase 1 Plan' : 'Missing Phase 1 Plan Reference',
+                summary: hasMatchingPlan 
+                  ? 'The execution record references a valid Phase 1 plan.'
+                  : 'No matching Phase 1 plan found for this execution record.'
+              }
+            });

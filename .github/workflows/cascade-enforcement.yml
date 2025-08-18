@@ -1,0 +1,311 @@
+name: 'Claude Cascade Enforcement'
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  push:
+    branches-ignore:
+      - 'dependabot/**'
+  workflow_dispatch:
+    inputs:
+      force_validate:
+        description: 'Force validation of all phases'
+        type: boolean
+        default: false
+
+jobs:
+  cascade-validation:
+    name: 'Cascade Plan Validation'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for all branches and tags
+          
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          
+      - name: Install dependencies
+        run: npm ci
+        working-directory: .github/scripts
+        
+      - name: Check for .claude directory
+        id: check-claude-dir
+        run: |
+          if [ -d ".claude" ]; then
+            echo "claude_dir_exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "claude_dir_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Create .claude directory if needed
+        if: steps.check-claude-dir.outputs.claude_dir_exists == 'false'
+        run: |
+          mkdir -p .claude/plans/1_pre_exec_plans
+          mkdir -p .claude/plans/2_post_exec_plans
+          mkdir -p .claude/plans/3_checked_delta_exec_plans
+          echo "# Claude Cascade Plans\n\nThis directory contains the three-phase planning documents." > .claude/plans/README.md
+          git config --local user.email "claude-cascade@github.actions"
+          git config --local user.name "Claude Cascade Bot"
+          git add .claude/
+          git commit -m "[SYSTEM] Initialize Claude Cascade directory structure"
+          git push
+        continue-on-error: true
+        
+      - name: Extract PR information
+        id: pr-info
+        if: github.event_name == 'pull_request'
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          PR_BODY="${{ github.event.pull_request.body }}"
+          
+          echo "pr_number=${PR_NUMBER}" >> $GITHUB_OUTPUT
+          echo "pr_title=${PR_TITLE}" >> $GITHUB_OUTPUT
+          echo "pr_body=${PR_BODY}" >> $GITHUB_OUTPUT
+          
+          # Extract plan name if it follows [PLAN:name] convention
+          if [[ "$PR_TITLE" =~ \[PLAN:([^\]]+)\] ]]; then
+            PLAN_NAME="${BASH_REMATCH[1]}"
+            echo "plan_name=${PLAN_NAME}" >> $GITHUB_OUTPUT
+            echo "has_plan_name=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_plan_name=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Check for Phase 1 plan
+        id: phase-1-check
+        run: |
+          PLANS_DIR=".claude/plans/1_pre_exec_plans"
+          
+          if [ -d "$PLANS_DIR" ]; then
+            PLAN_COUNT=$(find "$PLANS_DIR" -name "*.md" -type f | wc -l)
+            if [ "$PLAN_COUNT" -gt 0 ]; then
+              echo "phase_1_exists=true" >> $GITHUB_OUTPUT
+              LATEST_PLAN=$(find "$PLANS_DIR" -name "*.md" -type f -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}')
+              echo "latest_plan=${LATEST_PLAN}" >> $GITHUB_OUTPUT
+              PLAN_NAME=$(basename "$LATEST_PLAN" .md | cut -d'_' -f3-)
+              echo "plan_name=${PLAN_NAME}" >> $GITHUB_OUTPUT
+            else
+              echo "phase_1_exists=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "phase_1_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Check for Phase 2 execution record
+        id: phase-2-check
+        if: steps.phase-1-check.outputs.phase_1_exists == 'true'
+        run: |
+          PLANS_DIR=".claude/plans/2_post_exec_plans"
+          PLAN_NAME="${{ steps.phase-1-check.outputs.plan_name }}"
+          
+          if [ -d "$PLANS_DIR" ]; then
+            # Look for a Phase 2 file with the same plan name
+            if [ -n "$PLAN_NAME" ]; then
+              PHASE2_COUNT=$(find "$PLANS_DIR" -name "*${PLAN_NAME}*_EXECUTED.md" -type f | wc -l)
+              if [ "$PHASE2_COUNT" -gt 0 ]; then
+                echo "phase_2_exists=true" >> $GITHUB_OUTPUT
+                LATEST_PLAN=$(find "$PLANS_DIR" -name "*${PLAN_NAME}*_EXECUTED.md" -type f -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}')
+                echo "latest_execution=${LATEST_PLAN}" >> $GITHUB_OUTPUT
+              else
+                echo "phase_2_exists=false" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "phase_2_exists=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "phase_2_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Check for Phase 3 verification
+        id: phase-3-check
+        if: steps.phase-2-check.outputs.phase_2_exists == 'true'
+        run: |
+          PLANS_DIR=".claude/plans/3_checked_delta_exec_plans"
+          PLAN_NAME="${{ steps.phase-1-check.outputs.plan_name }}"
+          
+          if [ -d "$PLANS_DIR" ]; then
+            # Look for a Phase 3 file with the same plan name
+            if [ -n "$PLAN_NAME" ]; then
+              PHASE3_COUNT=$(find "$PLANS_DIR" -name "*${PLAN_NAME}*_VERIFICATION.md" -type f | wc -l)
+              if [ "$PHASE3_COUNT" -gt 0 ]; then
+                echo "phase_3_exists=true" >> $GITHUB_OUTPUT
+                LATEST_PLAN=$(find "$PLANS_DIR" -name "*${PLAN_NAME}*_VERIFICATION.md" -type f -printf '%T@ %p\n' | sort -n | tail -1 | awk '{print $2}')
+                echo "latest_verification=${LATEST_PLAN}" >> $GITHUB_OUTPUT
+              else
+                echo "phase_3_exists=false" >> $GITHUB_OUTPUT
+              fi
+            else
+              echo "phase_3_exists=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "phase_3_exists=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Parse Phase 1 plan
+        id: parse-plan
+        if: steps.phase-1-check.outputs.phase_1_exists == 'true'
+        uses: ./.github/actions/plan-parser
+        with:
+          plan_file: ${{ steps.phase-1-check.outputs.latest_plan }}
+          
+      - name: Generate Phase Status Report
+        id: phase-status
+        run: |
+          echo "## Claude Cascade Phase Status" > phase_status.md
+          echo "" >> phase_status.md
+          
+          # Phase 1 status
+          if [[ "${{ steps.phase-1-check.outputs.phase_1_exists }}" == "true" ]]; then
+            echo "✅ **Phase 1**: Pre-Execution Plan exists" >> phase_status.md
+            echo "  - File: \`${{ steps.phase-1-check.outputs.latest_plan }}\`" >> phase_status.md
+          else
+            echo "❌ **Phase 1**: No Pre-Execution Plan found" >> phase_status.md
+            echo "  - Action required: Create a plan in \`.claude/plans/1_pre_exec_plans/\`" >> phase_status.md
+          fi
+          
+          # Phase 2 status
+          if [[ "${{ steps.phase-2-check.outputs.phase_2_exists }}" == "true" ]]; then
+            echo "✅ **Phase 2**: Post-Execution Record exists" >> phase_status.md
+            echo "  - File: \`${{ steps.phase-2-check.outputs.latest_execution }}\`" >> phase_status.md
+          else
+            echo "❌ **Phase 2**: No Post-Execution Record found" >> phase_status.md
+            echo "  - Action required: Create an execution record in \`.claude/plans/2_post_exec_plans/\`" >> phase_status.md
+          fi
+          
+          # Phase 3 status
+          if [[ "${{ steps.phase-3-check.outputs.phase_3_exists }}" == "true" ]]; then
+            echo "✅ **Phase 3**: Delta Verification exists" >> phase_status.md
+            echo "  - File: \`${{ steps.phase-3-check.outputs.latest_verification }}\`" >> phase_status.md
+          else
+            echo "❌ **Phase 3**: No Delta Verification found" >> phase_status.md
+            echo "  - Action required: Create a verification in \`.claude/plans/3_checked_delta_exec_plans/\`" >> phase_status.md
+          fi
+          
+          # Overall status
+          echo "" >> phase_status.md
+          echo "### Overall Completion" >> phase_status.md
+          
+          TOTAL=3
+          COMPLETED=0
+          
+          if [[ "${{ steps.phase-1-check.outputs.phase_1_exists }}" == "true" ]]; then
+            COMPLETED=$((COMPLETED + 1))
+          fi
+          if [[ "${{ steps.phase-2-check.outputs.phase_2_exists }}" == "true" ]]; then
+            COMPLETED=$((COMPLETED + 1))
+          fi
+          if [[ "${{ steps.phase-3-check.outputs.phase_3_exists }}" == "true" ]]; then
+            COMPLETED=$((COMPLETED + 1))
+          fi
+          
+          PERCENTAGE=$((COMPLETED * 100 / TOTAL))
+          echo "- **Completion**: ${PERCENTAGE}% (${COMPLETED}/${TOTAL} phases)" >> phase_status.md
+          
+          if [[ "$PERCENTAGE" == "100" ]]; then
+            echo "- **Status**: ✅ Ready to merge" >> phase_status.md
+          else
+            echo "- **Status**: ⚠️ Missing required phases" >> phase_status.md
+          fi
+          
+          cat phase_status.md
+          
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const status = fs.readFileSync('phase_status.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: ${{ github.event.pull_request.number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: status
+            });
+            
+      - name: Set PR Status Check
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const phase1Exists = '${{ steps.phase-1-check.outputs.phase_1_exists }}' === 'true';
+            const phase2Exists = '${{ steps.phase-2-check.outputs.phase_2_exists }}' === 'true';
+            const phase3Exists = '${{ steps.phase-3-check.outputs.phase_3_exists }}' === 'true';
+            
+            // Create or update check for Phase 1
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 1',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: phase1Exists ? 'success' : 'failure',
+              output: {
+                title: phase1Exists ? 'Phase 1 Plan Complete' : 'Missing Phase 1 Plan',
+                summary: phase1Exists 
+                  ? 'Pre-execution plan found and validated.'
+                  : 'No pre-execution plan found. Create one in `.claude/plans/1_pre_exec_plans/`.'
+              }
+            });
+            
+            // Create or update check for Phase 2
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 2',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: phase2Exists ? 'success' : 'failure',
+              output: {
+                title: phase2Exists ? 'Phase 2 Execution Complete' : 'Missing Phase 2 Execution Record',
+                summary: phase2Exists 
+                  ? 'Post-execution record found and validated.'
+                  : 'No post-execution record found. Create one in `.claude/plans/2_post_exec_plans/`.'
+              }
+            });
+            
+            // Create or update check for Phase 3
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Phase 3',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: phase3Exists ? 'success' : 'failure',
+              output: {
+                title: phase3Exists ? 'Phase 3 Verification Complete' : 'Missing Phase 3 Verification',
+                summary: phase3Exists 
+                  ? 'Delta verification found and validated.'
+                  : 'No delta verification found. Create one in `.claude/plans/3_checked_delta_exec_plans/`.'
+              }
+            });
+            
+            // Create overall status check
+            const allComplete = phase1Exists && phase2Exists && phase3Exists;
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Claude Cascade - Complete Workflow',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: allComplete ? 'success' : 'failure',
+              output: {
+                title: allComplete ? 'Three-Phase Workflow Complete' : 'Incomplete Three-Phase Workflow',
+                summary: allComplete 
+                  ? 'All three phases (Plan, Execute, Verify) are complete and validated.'
+                  : 'Not all phases of the three-phase workflow are complete. See PR comments for details.'
+              }
+            });
